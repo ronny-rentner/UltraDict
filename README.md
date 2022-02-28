@@ -113,7 +113,7 @@ Python 3.9.2 on linux
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs)
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
