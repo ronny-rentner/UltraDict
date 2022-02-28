@@ -5,7 +5,7 @@ Tested with Python >= v3.9
 
 ## General Concept
 
-`UltraDict` uses [multiprocessing.shared memeory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize dictionary data between multiple processes using the same data.
+`UltraDict` uses [multiprocessing.shared_memory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize dictionary data between multiple processes using the same data.
 
 It does so by using a stream of updates in a shared memory buffer.
 
@@ -50,7 +50,10 @@ Type "help", "copyright", "credits" or "license" for more information.
 >>> ultra = UltraDict(name='psm_ad73da69')
 >>> ultra
 {1: 1, 'some_key': 'some_value'}
->>>
+```
+## Performance comparison
+
+```python
 >>> # Now let's to some performance testing
 >>> import multiprocessing, timeit
 >>> orig = dict({ 1:1 }, some_key='some_value')
@@ -61,7 +64,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 {1: 1, 'some_key': 'some_value'}
 ```
 
-## Read performance
+### Read performance
 
 ```python
 >>> timeit.timeit('orig[1]', globals=globals())
@@ -80,7 +83,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 0.047667117964010686
 ```
 
-## Write performance
+### Write performance
 
 ```python
 >>> timeit.timeit('orig[1] = 1', globals=globals())
