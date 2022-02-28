@@ -59,17 +59,23 @@ Python 3.9.2 on linux
 Python 3.9.2 on linux
 >>> 
 >>> from UltraDict import UltraDict
->>> ultra = UltraDict(name='psm_ad73da69')
->>> ultra
+>>> ultra = UltraDict()
+>>> for i in range(10_000): ultra[i] = i
+... 
+>>> len(ultra)
+10000
+>>> ultra[500]
+500
 >>> # Now let's to some performance testing
 >>> import multiprocessing, timeit
->>> ultra = UltraDict({ 1:1 }, some_key='some_value')
->>> orig = dict({ 1:1 }, some_key='some_value')
+>>> orig = dict(ultra)
+>>> len(orig)
+10000
+>>> orig[500]
+500
 >>> managed = multiprocessing.Manager().dict(orig)
->>> orig
-{1: 1, 'some_key': 'some_value'}
->>> dict(managed)
-{1: 1, 'some_key': 'some_value'}
+>>> len(managed)
+10000
 ```
 
 ### Read performance
