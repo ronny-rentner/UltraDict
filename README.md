@@ -23,10 +23,10 @@ There are many alternatives:
 
 ## How to use?
 
+In one process:
+
 ```python
-Python 3.9.2 (default, Feb 28 2021, 17:03:44) 
-[GCC 10.2.1 20210110] on linux
-Type "help", "copyright", "credits" or "license" for more information.
+Python 3.9.2 on linux
 >>> 
 >>> from UltraDict import UltraDict
 >>> ultra = UltraDict({ 1:1 }, some_key='some_value')
@@ -36,26 +36,34 @@ Type "help", "copyright", "credits" or "license" for more information.
 >>> orig
 {1: 1, 'some_key': 'some_value'}
 >>>
->>> # We need the name to attach to the same dict in another process
+>>> # We need the shared memory name in the other process.
 >>> ultra.name
 'psm_ad73da69'
 ```
 
+In another process:
+
 ```python
-Python 3.9.2 (default, Feb 28 2021, 17:03:44) 
-[GCC 10.2.1 20210110] on linux
-Type "help", "copyright", "credits" or "license" for more information.
+Python 3.9.2 on linux
 >>> 
 >>> from UltraDict import UltraDict
+>>> # Connect to the shared memory with the name above
 >>> ultra = UltraDict(name='psm_ad73da69')
 >>> ultra
 {1: 1, 'some_key': 'some_value'}
 ```
+
 ## Performance comparison
 
 ```python
+Python 3.9.2 on linux
+>>> 
+>>> from UltraDict import UltraDict
+>>> ultra = UltraDict(name='psm_ad73da69')
+>>> ultra
 >>> # Now let's to some performance testing
 >>> import multiprocessing, timeit
+>>> ultra = UltraDict({ 1:1 }, some_key='some_value')
 >>> orig = dict({ 1:1 }, some_key='some_value')
 >>> managed = multiprocessing.Manager().dict(orig)
 >>> orig
@@ -69,16 +77,20 @@ Type "help", "copyright", "credits" or "license" for more information.
 ```python
 >>> timeit.timeit('orig[1]', globals=globals())
 0.03503723500762135
+>>>
 >>> timeit.timeit('ultra[1]', globals=globals())
 0.380401570990216
->>> # We are factor 10 slower than a real, local dict
+>>>
 >>> timeit.timeit('managed[1]', globals=globals())
 15.848494678968564
->>> # But way faster than using a Manager
 >>>
->>> # If you full performance, you can access the underlying
+>>> # We are factor 10 slower than a real, local dict,
+>>> # but way faster than using a Manager
+>>>
+>>> # If you need full read performance, you can access the underlying
 >>> # cache directly and get almost original dict performance,
 >>> # of course at the cost of not having real-time updates anymore.
+>>>
 >>> timeit.timeit('ultra.data[1]', globals=globals())
 0.047667117964010686
 ```
@@ -88,20 +100,41 @@ Type "help", "copyright", "credits" or "license" for more information.
 ```python
 >>> timeit.timeit('orig[1] = 1', globals=globals())
 0.02869905502302572
+>>>
 >>> timeit.timeit('ultra[1] = 1', globals=globals())
 2.259694856009446
->>> # We are factor 100 slower than a real, local dict,
->>> # but still way faster than using a Manager
+>>>
 >>> timeit.timeit('managed[1] = 1', globals=globals())
 16.352361536002718
+>>>
+>>> # We are factor 100 slower than a real, local dict,
+>>> # but still way faster than using a Manager
 ```
+
+## Parameters
+
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs)
+
+`name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
+a new shared memory space is created if it does not exist yet. Otherwise the existing shared
+memory space is attached.
+
+`buffer_size`: Size of the shared memory buffer used for streaming changed of the dict.
+
+The buffer size limits the biggest change that can be streamed, so when you use large values or
+deeply nested dicts you might need a bigger buffer. Otherwise, if the buffer is too small,
+it will fall back to a full dump.
+
+Whenever the buffer is full, a full dump will be executed. A new shared memory is allocated just
+big enough for the full dump. Afterwards the streaming buffer is reset.  All other user of the
+dict will automatically read the full dump and continue with the reset streaming buffer.
+
 
 ## Advanced usage
 
+See `example.py` and `example_fork.py`
+
 ```python
->>> # The buffer size limits the biggest change that can be streamed, so when you use
->>> # deeply nested dicts you might need a bigger buffer. Otherwise, if the buffer is too small,
->>> # it will fall back to a full dump.
 >>> ultra = UltraDict({ 'init': 'some initial data' }, name='my-name', buffer_size=100_000)
 >>> # Lets use a value with 100.000 bytes length
 >>> ultra[0] = ' ' * 100_000

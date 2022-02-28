@@ -198,7 +198,7 @@ class UltraDict(collections.UserDict):
     __slots__ = 'name', 'control', 'buffer', 'lock', 'shared_lock', \
         'update_stream_position', 'full_dump_counter'
 
-    def __init__(self, *args, name=None, change_list=100, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs):
+    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs):
 
         assert buffer_size < 2**32
 
@@ -269,7 +269,7 @@ class UltraDict(collections.UserDict):
             memory = multiprocessing.shared_memory.SharedMemory(create=True, size=size, name=name)
             # Remember that we have created this memory
             memory.created_by_ultra = True
-            log.debug('Created shared memory: ', memory.name)
+            #log.debug('Created shared memory: ', memory.name)
             return memory
 
         raise Exception("Could not get memory")
@@ -280,9 +280,9 @@ class UltraDict(collections.UserDict):
         with self.lock:
             self.apply_update()
             marshalled = self.serializer.dumps(self.data)
-            log.info("Dumped dict with {} elements to {} bytes", len(self), len(marshalled))
+            #log.info("Dumped dict with {} elements to {} bytes", len(self), len(marshalled))
             full_dump_memory = self.get_memory(create=True, size=len(marshalled))
-            log.debug("Full dump memory: ", full_dump_memory)
+            #log.debug("Full dump memory: ", full_dump_memory)
             full_dump_memory.buf[:] = marshalled
             self.full_dump_memory_name_remote[:] = full_dump_memory.name.encode('utf-8').ljust(255)
             if old:
@@ -298,12 +298,12 @@ class UltraDict(collections.UserDict):
 
     def load(self, force=False):
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
-        log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
+        #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
         if force or (self.full_dump_counter < full_dump_counter):
             name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
             full_dump_memory = self.get_memory(create=False, name=name)
             full_dump = self.serializer.loads(full_dump_memory.buf)
-            log.debug("Got full dump: ", full_dump)
+            #log.debug("Got full dump: ", full_dump)
             self.data.clear()
             self.data.update(full_dump)
             self.full_dump_counter = full_dump_counter
@@ -327,7 +327,7 @@ class UltraDict(collections.UserDict):
             end_position = start_position + length + 6
             #log.debug("Pos: ", start_position, end_position)
             if end_position > self.buffer.size:
-                log.debug("Buffer is full")
+                #log.debug("Buffer is full")
                 self.dump()
                 return
         
@@ -437,7 +437,7 @@ class UltraDict(collections.UserDict):
         pprint.pprint(self.status())
 
     def cleanup(self):
-        log.debug('Cleanup')
+        #log.debug('Cleanup')
 
         if hasattr(self.lock, 'cleanup'):
             self.lock.cleanup()
@@ -460,7 +460,7 @@ class UltraDict(collections.UserDict):
     def unlink_by_name(self, name):
         try:
             memory = self.get_memory(create=False, name=name)
-            log.debug("Unlinking memory '{}'", name)
+            #log.debug("Unlinking memory '{}'", name)
             memory.close()
             memory.unlink()
         except (KeyError, Exception) as e:
