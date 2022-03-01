@@ -1,5 +1,7 @@
 # UltraDict
-Shared, streaming Python dict
+Sychronized, streaming Python dictionary that uses shared memory as a backend
+
+**Warning: This is an early hack. There are not unit tests and so on. Not stable!**
 
 Features:
 * Fast
@@ -17,12 +19,17 @@ If the buffer is full, `UltraDict` will automatically do a full dump once to a n
 memory space, reset the streaming buffer and continue to stream future updates. All users
 of the `UltraDict` will automatically receive all full dumps and streaming updates.
 
+## Issues
+
+On Windows, if no process has any handles on the shared memory, the OS will gc all of the shared memory making it inaccessible for
+future processes. This is a bug in Python. 
+
 ## Alternatives
 
 There are many alternatives:
 
  * [multiprocessing.Manager](https://docs.python.org/3/library/multiprocessing.html#managers)
- * [shared-memoery-dict](https://github.com/luizalabs/shared-memory-dict)
+ * [shared-memory-dict](https://github.com/luizalabs/shared-memory-dict)
  * Redis
  * Memcached
 
@@ -124,7 +131,7 @@ Python 3.9.2 on linux
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs)`
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
