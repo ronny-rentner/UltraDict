@@ -291,7 +291,6 @@ class UltraDict(collections.UserDict):
             try:
                 memory = multiprocessing.shared_memory.SharedMemory(name=name)
                 #log.debug('Attached shared memory: ', memory.name)
-                print('Attached shared memory: ', memory.name)
                 return memory
             except FileNotFoundError as e: pass
 
@@ -302,7 +301,6 @@ class UltraDict(collections.UserDict):
             # Remember that we have created this memory
             memory.created_by_ultra = True
             #log.debug('Created shared memory: ', memory.name)
-            print('Created shared memory: ', memory)
             return memory  
 
         raise Exception("Could not get memory: ", name)
@@ -330,7 +328,6 @@ class UltraDict(collections.UserDict):
             self.full_dump_memory = full_dump_memory
 
             #log.debug("Full dump memory: ", full_dump_memory)
-            print("Full dump memory: ", full_dump_memory)
 
             if length + 6 > full_dump_memory.size:
                 raise Exception('Full dump memory too small for full dump: needed={} got={}'.format(length + 6, full_dump_memory.size))
@@ -369,7 +366,6 @@ class UltraDict(collections.UserDict):
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
         if force or (self.full_dump_counter < full_dump_counter):
             name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
-            print("Load full dump: ", name)
             if self.full_dump_size and self.full_dump_memory:
                 full_dump_memory = self.full_dump_memory
             else:
