@@ -1,16 +1,21 @@
 # UltraDict
 Shared, streaming Python dict
 
-Tested with Python >= v3.9
+Features:
+* Fast
+* No running manager processes
+* Works in spawn and fork context
+* Tested with Python >= v3.9 on Linux and Windows
 
 ## General Concept
 
-`UltraDict` uses [multiprocessing.shared_memory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize dictionary data between multiple processes using the same data.
+`UltraDict` uses [multiprocessing.shared_memory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize a dict data between multiple processes.
 
-It does so by using a stream of updates in a shared memory buffer.
+It does so by using a *stream of updates* in a shared memory buffer. This is efficient because only changes have to be serialized.
 
-If the buffer is full, `UltraDict` will resort to do a full dump once,
-reset the streaming buffer and continue to stream future updates after the full dump.
+If the buffer is full, `UltraDict` will automatically do a full dump once to a new shared
+memory space, reset the streaming buffer and continue to stream future updates. All users
+of the `UltraDict` will automatically receive all full dumps and streaming updates.
 
 ## Alternatives
 
@@ -142,7 +147,8 @@ See `example.py` and `example_fork.py`
 
 ```python
 >>> ultra = UltraDict({ 'init': 'some initial data' }, name='my-name', buffer_size=100_000)
->>> # Lets use a value with 100.000 bytes length
+>>> # Lets use a value with 100.000 bytes length, this will not fit into our 100k bytes buffer
+>>> # due to the serialization overhead.
 >>> ultra[0] = ' ' * 100_000
 >>> ultra.print_status()
 {'buffer': SharedMemory('my-name_memory', size=100000),
@@ -165,26 +171,27 @@ Other things you can do:
 ```python
 >>> # Load latest full dump if one is available
 >>> ultra.load()
->>>
+
+>>> # Show statistics
 >>> ultra.print_status()
->>>
+
 >>> # Force load of latest full dump, even if we had already processed it.
 >>> # There might also be streaming updates available after loading the full dump.
 >>> ultra.load(force=True)
->>> ultra.print_status()
 
 >>> # Apply full dump and stream updates to
 >>> # underlying local dict, this is automatically
 >>> # called when you normally access the UltraDict,
 >>> # but can be useful to call after a forced load.
 >>> ultra.apply_update()
->>>
->>> ultra.dump()
->>> ultra.print_status()
+
 >>> # Access uderlying local dict directly
 >>> ultra.data
->>> # Apply updates to underlying local dict,
->>> # this is automatically called when you normally
->>> # access the UltraDict
->>> ultra.apply_update()
+
+>>> # Use any serialize you like, given it supports the loads() and dumps() methods
+>>> import pickle 
+>>> ultra = UltraDict(serializer=pickle)
+
+
+
 ```
