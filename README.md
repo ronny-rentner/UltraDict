@@ -1,5 +1,7 @@
 # UltraDict
-Shared, streaming Python dict
+Sychronized, streaming Python dictionary that uses shared memory as a backend
+
+**Warning: This is an early hack. There are not unit tests and so on. Not stable!**
 
 Features:
 * Fast
