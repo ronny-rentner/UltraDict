@@ -17,9 +17,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing, multiprocessing.shared_memory, collections, atexit, enum, time, marshal
+import multiprocessing, multiprocessing.shared_memory
+import collections, atexit, enum, time, marshal, sys
 
-import atomics
+try:
+    import atomics
+except:
+    pass
 
 try:
     from utils import log
@@ -195,12 +199,13 @@ class UltraDict(collections.UserDict):
         def __exit__(self, type, value, traceback):
             self.release()
 
-    __slots__ = 'name', 'control', 'buffer', 'lock', 'shared_lock', \
-        'update_stream_position', 'full_dump_counter'
+    __slots__ = 'name', 'control', 'buffer', 'buffer_size', 'lock', 'shared_lock', \
+        'update_stream_position', 'full_dump_counter', 'full_dump_memory', 'full_dump_size'
 
-    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, **kwargs):
+    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, **kwargs):
 
         assert buffer_size < 2**32
+        self.buffer_size = buffer_size
 
         # Local position, ie. the last position we have processed from the stream
         self.update_stream_position  = 0
@@ -224,7 +229,33 @@ class UltraDict(collections.UserDict):
         self.lock_pid_remote               = self.control.buf[ 4:  8]
         self.lock_remote                   = self.control.buf[ 8: 10]
         self.full_dump_counter_remote      = self.control.buf[10: 14]
+        self.full_dump_static_size_remote  = self.control.buf[14: 18]
         self.full_dump_memory_name_remote  = self.control.buf[20:275]
+
+        self.full_dump_memory = None
+
+        # We just attached to the existing control
+        if not hasattr(self.control, 'created_by_ultra'):
+            # Check if we have a fixed size full dump memory
+            size = int.from_bytes(self.full_dump_static_size_remote, 'little')
+            # Got existing size of full dump memory, that must mean it's static size
+            # and we should attach to it
+            if size > 0:
+                self.full_dump_size = size
+                self.full_dump_memory = self.get_memory(create=False, name=self.name + '_full')
+        # We created the control memory, thus let's check if we need to create the 
+        # full dump memory as well
+        elif full_dump_size:
+            self.full_dump_size = full_dump_size
+            self.full_dump_static_size_remote[:] = full_dump_size.to_bytes(4, 'little')
+
+            self.full_dump_memory = self.get_memory(create=True, name=self.name + '_full', size=full_dump_size)
+            self.full_dump_memory_name_remote[:] = self.full_dump_memory.name.encode('utf-8').ljust(255)
+        # Dynamic full dump memory handling
+        # Warning: Issues on Windows when the process ends that has created the full dump memory
+        else:
+            self.full_dump_size = None
+
 
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
@@ -259,20 +290,22 @@ class UltraDict(collections.UserDict):
             # First try to attach to existing memory
             try:
                 memory = multiprocessing.shared_memory.SharedMemory(name=name)
-                memory.created_by_ultra = False
-                log.debug('Attached shared memory: ', memory.name)
+                #log.debug('Attached shared memory: ', memory.name)
+                print('Attached shared memory: ', memory.name)
                 return memory
             except FileNotFoundError as e: pass
 
         # No existing memory found
         if create:
             memory = multiprocessing.shared_memory.SharedMemory(create=True, size=size, name=name)
+            #multiprocessing.resource_tracker.unregister(memory._name, 'shared_memory')
             # Remember that we have created this memory
             memory.created_by_ultra = True
             #log.debug('Created shared memory: ', memory.name)
-            return memory
+            print('Created shared memory: ', memory)
+            return memory  
 
-        raise Exception("Could not get memory")
+        raise Exception("Could not get memory: ", name)
 
     def dump(self):
         """ Dump the full dict into shared memory """
@@ -280,14 +313,47 @@ class UltraDict(collections.UserDict):
         with self.lock:
             self.apply_update()
             marshalled = self.serializer.dumps(self.data)
+            length = len(marshalled)
             #log.info("Dumped dict with {} elements to {} bytes", len(self), len(marshalled))
-            full_dump_memory = self.get_memory(create=True, size=len(marshalled))
+
+            # If we don't have a fixed size, let's create full dump memory dynamically
+            # TODO: This causes issues on Windows because the memory is not persistant
+            if self.full_dump_size and self.full_dump_memory:
+                full_dump_memory = self.full_dump_memory
+            else:
+                # Dynamic full dump memory
+                full_dump_memory = self.get_memory(create=True, size=length + 6)
+                self.full_dump_memory_name_remote[:] = full_dump_memory.name.encode('utf-8').ljust(255)
+
+            # On Windows, we need to keep a reference to the full dump memory,
+            # otherwise it's destoryed
+            self.full_dump_memory = full_dump_memory
+
             #log.debug("Full dump memory: ", full_dump_memory)
-            full_dump_memory.buf[:] = marshalled
-            self.full_dump_memory_name_remote[:] = full_dump_memory.name.encode('utf-8').ljust(255)
-            if old:
+            print("Full dump memory: ", full_dump_memory)
+
+            if length + 6 > full_dump_memory.size:
+                raise Exception('Full dump memory too small for full dump: needed={} got={}'.format(length + 6, full_dump_memory.size))
+
+            # Write header, 6 bytes
+            # First byte is null byte
+            full_dump_memory.buf[0:1] = b'\x00'
+            # Then comes 4 bytes of length of the body
+            full_dump_memory.buf[1:5] = length.to_bytes(4, 'little')
+            # Then another null bytes, end of header
+            full_dump_memory.buf[5:6] = b'\x00'
+
+            # Write body
+            full_dump_memory.buf[6:6+length] = marshalled
+
+            # If the old memory was dynamically created, delete it
+            if old and old != full_dump_memory.name and not self.full_dump_size:
                 self.unlink_by_name(old)
-            full_dump_memory.close()
+            
+            # On Windows, if we close it, it cannot be read anymore by anyone else.
+            if not self.full_dump_size and sys.platform != 'win32':
+                full_dump_memory.close()
+
             self.full_dump_counter += 1
             current = int.from_bytes(self.full_dump_counter_remote, 'little')
             self.full_dump_counter_remote[:] = int(current + 1).to_bytes(4, 'little')
@@ -296,18 +362,41 @@ class UltraDict(collections.UserDict):
             self.update_stream_position = 0
             self.update_stream_position_remote[:] = b'\x00\x00\x00\x00'
 
+            return full_dump_memory
+
     def load(self, force=False):
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
         if force or (self.full_dump_counter < full_dump_counter):
             name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
-            full_dump_memory = self.get_memory(create=False, name=name)
-            full_dump = self.serializer.loads(full_dump_memory.buf)
+            print("Load full dump: ", name)
+            if self.full_dump_size and self.full_dump_memory:
+                full_dump_memory = self.full_dump_memory
+            else:
+                full_dump_memory = self.get_memory(create=False, name=name)
+            buf = full_dump_memory.buf
+            assert buf
+            pos = 0
+            # Read header
+            # The first byte should be a null byte to introduce the header
+            assert bytes(buf[pos:pos+1]) == b'\x00'
+            pos += 1
+            # Then comes 4 bytes of length
+            length = int.from_bytes(bytes(buf[pos:pos+4]), 'little')
+            pos += 4
+            #log.debug("Found update, pos={} length={}", pos, length)
+            assert bytes(buf[pos:pos+1]) == b'\x00'
+            pos += 1
+            # Unserialize the update data, we expect a tuple of key and value
+            full_dump = self.serializer.loads(bytes(buf[pos:pos+length]))
             #log.debug("Got full dump: ", full_dump)
+
             self.data.clear()
             self.data.update(full_dump)
             self.full_dump_counter = full_dump_counter
             self.update_stream_position = 0
+            if sys.platform != 'win32' and not self.full_dump_memory:
+                full_dump_memory.close()
         else:
             log.warn("Cannot load full dump, no new data available")
 
@@ -326,7 +415,7 @@ class UltraDict(collections.UserDict):
             # 6 bytes for the header
             end_position = start_position + length + 6
             #log.debug("Pos: ", start_position, end_position)
-            if end_position > self.buffer.size:
+            if end_position > self.buffer_size:
                 #log.debug("Buffer is full")
                 self.dump()
                 return
@@ -384,7 +473,7 @@ class UltraDict(collections.UserDict):
     def update(self, other=None, *args, **kwargs):
         #log.debug("update")
         if other is not None:
-            for k, v in other.items() if isinstance(other, collections.Mapping) else other:
+            for k, v in other.items() if isinstance(other, collections.abc.Mapping) else other:
                 self[k] = v
         for k, v in kwargs.items():
             self[k] = v
@@ -445,15 +534,23 @@ class UltraDict(collections.UserDict):
         del self.update_stream_position_remote
         del self.lock_pid_remote
         del self.lock_remote
+        del self.full_dump_static_size_remote
         del self.full_dump_counter_remote
         del self.full_dump_memory_name_remote
 
         self.control.close()
         self.buffer.close()
 
+        if self.full_dump_memory:
+            self.full_dump_memory.close()
+
+        # No further cleanup on Windows, it will break everything
+        #if sys.platform == 'win32':
+        #    return
+
     def unlink(self, force=False):
         self.cleanup();
-        if force or self.control.created_by_ultra:
+        if force or hasattr(self.control, 'created_by_ultra'):
             self.control.unlink()
             self.buffer.unlink()
 
