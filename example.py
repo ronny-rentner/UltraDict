@@ -15,7 +15,6 @@ from UltraDict import UltraDict
 
 #log.set_level(log.Levels.warn)
 
-import atomics
 import multiprocessing, time
 
 count = 1000
@@ -65,3 +64,5 @@ if __name__ == '__main__':
     print(ultra)
 
     print("Counter: ", ultra['counter'], ' == ', count)
+
+    ultra.unlink()

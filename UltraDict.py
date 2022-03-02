@@ -1,7 +1,7 @@
 #
 # UltraDict
 #
-# A sychronized Python dictionary that uses shared memory as a backend
+# A sychronized, streaming Python dictionary that uses shared memory as a backend
 #
 # Copyright [2022] [Ronny Rentner] [mail@ronny-rentner.de]
 #
@@ -62,19 +62,9 @@ class UltraDict(collections.UserDict):
         Lock stored in shared_memory to provide an additional layer of protection,
         e.g. when using spawned processes.
 
-        Locking process:
+        Internally uses atomics package of patomics for atomic locking.
 
-        1.  Check if `lock` and `lock_pid` are both not set.
-        2.  Set `lock` to True.
-        3a. If `lock_pid` is still not set, set `lock_pid` to our own pid.
-        3b. If `lock_pid` is set, there is a race condition. Exception!
-                TODO: Wait for lock to become available.
-        4.  Do the critical work.
-        5.  Check if `lock_pid` is still set to our own pid.
-        6a. If yes, all is good, set `lock_pid` to 0.
-        6b. If no, some other process stole our lock. Exception!
-                TODO: Try to repeat if lock was stolen.
-        7.  Set `lock` to False, all done.
+        This is needed if you write to the shared memory with independent processes.
         """
 
         __slots__ = 'parent', 'has_lock', 'lock_name', 'pid', 'pid_name', 'lock'
@@ -85,6 +75,7 @@ class UltraDict(collections.UserDict):
             self.lock_name = lock_name
             self.pid_name = pid_name
             self.pid = multiprocessing.current_process().pid
+            # Memoryview of lock bytes
             self.lock = getattr(self.parent, self.lock_name)
 
         def aquire(self):
@@ -145,7 +136,6 @@ class UltraDict(collections.UserDict):
                         raise Exception("failed test and dec")
                     return True
             return False
-
 
         def release(self):
             #log.debug("Release lock", self.has_lock)
@@ -214,17 +204,11 @@ class UltraDict(collections.UserDict):
         # remote, we need to load a full dump
         self.full_dump_counter       = 0
 
-        # Small 300 bytes of shared memory where we store state information of our
-        # update stream
+        # Small 300 bytes of shared memory where we store the runtime state
+        # of our update stream
         self.control = self.get_memory(create=True, name=name, size=300)
 
-        self.name = self.control.name
-        self.serializer = serializer
-
-        # Actual stream buffer that contains marshalled data of changes to the dict
-        self.buffer = self.get_memory(create=True, name=self.name + '_memory', size=buffer_size)
-
-        # Pointer to the right memory position
+        # Memoryviews to the right buffer position in self.control
         self.update_stream_position_remote = self.control.buf[ 0:  4]
         self.lock_pid_remote               = self.control.buf[ 4:  8]
         self.lock_remote                   = self.control.buf[ 8: 10]
@@ -232,7 +216,18 @@ class UltraDict(collections.UserDict):
         self.full_dump_static_size_remote  = self.control.buf[14: 18]
         self.full_dump_memory_name_remote  = self.control.buf[20:275]
 
+        self.name = self.control.name
+
+        self.serializer = serializer
+
+        # Actual stream buffer that contains marshalled data of changes to the dict
+        self.buffer = self.get_memory(create=True, name=self.name + '_memory', size=buffer_size)
+
         self.full_dump_memory = None
+
+        # Dynamic full dump memory handling
+        # Warning: Issues on Windows when the process ends that has created the full dump memory
+        self.full_dump_size = None
 
         # We just attached to the existing control
         if not hasattr(self.control, 'created_by_ultra'):
@@ -251,11 +246,6 @@ class UltraDict(collections.UserDict):
 
             self.full_dump_memory = self.get_memory(create=True, name=self.name + '_full', size=full_dump_size)
             self.full_dump_memory_name_remote[:] = self.full_dump_memory.name.encode('utf-8').ljust(255)
-        # Dynamic full dump memory handling
-        # Warning: Issues on Windows when the process ends that has created the full dump memory
-        else:
-            self.full_dump_size = None
-
 
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
@@ -307,6 +297,7 @@ class UltraDict(collections.UserDict):
 
     def dump(self):
         """ Dump the full dict into shared memory """
+
         old = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip()
         with self.lock:
             self.apply_update()
@@ -405,27 +396,20 @@ class UltraDict(collections.UserDict):
         marshalled = self.serializer.dumps((mode, key, item))
         length = len(marshalled)
 
-        # TODO: Add also a shared lock in case some foreign process is also writing updates
         with self.lock:
             start_position = int.from_bytes(self.update_stream_position_remote, 'little')
             # 6 bytes for the header
             end_position = start_position + length + 6
-            #log.debug("Pos: ", start_position, end_position)
+            #log.debug("Pos: ", start_position, end_position, self.buffer_size)
             if end_position > self.buffer_size:
                 #log.debug("Buffer is full")
                 self.dump()
                 return
         
-            # Write header, 6 bytes
-            # First byte is null byte
-            self.buffer.buf[start_position:start_position+1]   = b'\x00'
-            # Then comes 4 bytes of length of the body
-            self.buffer.buf[start_position+1:start_position+5] = length.to_bytes(4, 'little')
-            # Then another null bytes, end of header
-            self.buffer.buf[start_position+5:start_position+6] = b'\x00'
+            marshalled = b'\x00' + length.to_bytes(4, 'little') + b'\x00' + marshalled
 
             # Write body with the real data
-            self.buffer.buf[start_position+6:end_position]    = marshalled
+            self.buffer.buf[start_position:end_position] = marshalled
 
             # Inform others about it
             self.update_stream_position = end_position
@@ -544,11 +528,20 @@ class UltraDict(collections.UserDict):
         #if sys.platform == 'win32':
         #    return
 
+        #Only do cleanup once
+        atexit.unregister(self.cleanup)
+
     def unlink(self, force=False):
+        full_dump_name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+
         self.cleanup();
+
         if force or hasattr(self.control, 'created_by_ultra'):
             self.control.unlink()
             self.buffer.unlink()
+
+        self.unlink_by_name(full_dump_name)
+
 
     def unlink_by_name(self, name):
         try:
