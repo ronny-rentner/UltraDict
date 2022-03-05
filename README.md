@@ -22,7 +22,7 @@ of the `UltraDict` will automatically receive all full dumps and streaming updat
 ## Issues
 
 On Windows, if no process has any handles on the shared memory, the OS will gc all of the shared memory making it inaccessible for
-future processes. This is a bug in Python. 
+future processes. 
 
 ## Alternatives
 
@@ -143,10 +143,22 @@ The buffer size limits the biggest change that can be streamed, so when you use 
 deeply nested dicts you might need a bigger buffer. Otherwise, if the buffer is too small,
 it will fall back to a full dump.
 
-Whenever the buffer is full, a full dump will be executed. A new shared memory is allocated just
+Whenever the buffer is full, a full dump will be created. A new shared memory is allocated just
 big enough for the full dump. Afterwards the streaming buffer is reset.  All other user of the
-dict will automatically read the full dump and continue with the reset streaming buffer.
+dict will automatically load the full dump and continue with the reset streaming buffer.
 
+`serializer`: Use a different serialized from the default marshal, e. g. pickle, dill, cpickle, json. The callable
+provided must support the methods *loads()* and *dumps()*
+
+`shared_lock`: When writing to the same dict at the same time from multiple, independent processes,
+they need a shared lock to synchornize and not overwrite each other's changes. Shared locks are slow.
+They rely on the [atomics](https://github.com/doodspav/atomics) package for atomic locks. Alternatively,
+UltraDict will use a multiprocessing.RLock() instead which works well in fork context and is much faster.
+
+`full_dump_size`: If set, uses a static full dump memory instead of dynamically creating it. This
+might be necessary on Windows depending on your write behaviour. On Windows, the full dump memory goes
+away if the creator process goes away. Thus you must plan ahead which processes will be writing and creating
+full dumps.
 
 ## Advanced usage
 
@@ -199,6 +211,7 @@ Other things you can do:
 >>> import pickle 
 >>> ultra = UltraDict(serializer=pickle)
 
-
+>>> # Unlink all shared memory, it will not be visible to new processes afterwards
+>>> ultra.unlink()
 
 ```
