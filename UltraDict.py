@@ -21,6 +21,7 @@ import multiprocessing, multiprocessing.shared_memory
 import collections, atexit, enum, time, marshal, sys
 
 try:
+    # Needed for the shared locked
     import atomics
 except:
     pass
@@ -30,6 +31,8 @@ try:
 except:
     import logging as log
 
+#def profile(arg):
+#    return arg
 
 def remove_shm_from_resource_tracker():
     """
@@ -50,6 +53,7 @@ def remove_shm_from_resource_tracker():
     if "shared_memory" in resource_tracker._CLEANUP_FUNCS:
         del resource_tracker._CLEANUP_FUNCS["shared_memory"]
 
+#More details at: https://bugs.python.org/issue38119
 remove_shm_from_resource_tracker()
 
 
@@ -67,7 +71,7 @@ class UltraDict(collections.UserDict):
         This is needed if you write to the shared memory with independent processes.
         """
 
-        __slots__ = 'parent', 'has_lock', 'lock_name', 'pid', 'pid_name', 'lock'
+        __slots__ = 'parent', 'has_lock', 'lock_name', 'pid', 'pid_name', 'pid_remote', 'ctx', 'lock_atomic'
 
         def __init__(self, parent, lock_name, pid_name):
             self.parent = parent
@@ -75,20 +79,22 @@ class UltraDict(collections.UserDict):
             self.lock_name = lock_name
             self.pid_name = pid_name
             self.pid = multiprocessing.current_process().pid
-            # Memoryview of lock bytes
-            self.lock = getattr(self.parent, self.lock_name)
+            # Memoryview
+            self.pid_remote = getattr(self.parent, self.pid_name)
+            self.ctx = atomics.atomicview(buffer=getattr(self.parent, self.lock_name)[0:1], atype=atomics.BYTES)
+            self.lock_atomic = self.ctx.__enter__()
 
-        def aquire(self):
+        #@profile
+        def acquire(self):
             #log.debug("Acquire lock")
-            lock = getattr(self.parent, self.lock_name)
-            pid = getattr(self.parent, self.pid_name)
+            #lock = getattr(self.parent, self.lock_name)
             counter = 0
 
             # If we already own the lock, just increment our counter
             if self.has_lock:
                 #log.debug("Already got lock", self.has_lock)
                 self.has_lock += 1
-                ipid = int.from_bytes(pid, 'little')
+                ipid = int.from_bytes(self.pid_remote, 'little')
                 if ipid != self.pid:
                     raise Exception("Error, '{}' stole our lock '{}'".format(ipid, self.pid))
 
@@ -100,44 +106,37 @@ class UltraDict(collections.UserDict):
                 if self.test_and_inc():
                     self.has_lock += 1
 
-                    ipid = int.from_bytes(pid, 'little')
+                    ipid = int.from_bytes(self.pid_remote, 'little')
                     #log.debug("Got lock", self.has_lock, self.pid, ipid)
 
                     # If nobody owns the lock, the pid should be zero
                     assert ipid == 0
-                    pid[:] = self.pid.to_bytes(4, 'little')
+                    self.pid_remote[:] = self.pid.to_bytes(4, 'little')
                     return True
                 else:
                     # Oh no, already locked by someone else
-                    # TODO: Busy wait?
+                    # TODO: Busy wait? Timeout?
                     counter += 1
                     if counter > 100_000:
-                        raise Exception("Failed to aquire lock")
+                        raise Exception("Failed to acquire lock: ", counter)
 
+        #@profile
         def test_and_inc(self):
-            with atomics.atomicview(buffer=self.lock, width=2, atype=atomics.INT) as lock_atomic:
-                lock_state = lock_atomic.load()
-                if lock_state == 0:
-                    old = lock_atomic.exchange(1)
-                    #log.debug('inc old: ', old)
-                    if old != 0:
-                        # Oops, someone else was faster than us
-                        return False
-                    return True
-            return False
+            old = self.lock_atomic.exchange(b'\x01')
+            if old != b'\x00':
+                # Oops, someone else was faster than us
+                return False
+            return True
 
+        #@profile
         def test_and_dec(self):
-            with atomics.atomicview(buffer=self.lock, width=2, atype=atomics.INT) as lock_atomic:
-                lock_state = lock_atomic.load()
-                if lock_state == 1:
-                    old = lock_atomic.exchange(0)
-                    #log.debug('dec old: ', old)
-                    if old != 1:
-                        raise Exception("failed test and dec")
-                    return True
-            return False
+            old = self.lock_atomic.exchange(b'\x00')
+            if old != b'\x01':
+                raise Exception("Failed to release lock")
+            return True
 
-        def release(self):
+        #@profile
+        def release(self, *args):
             #log.debug("Release lock", self.has_lock)
             if self.has_lock > 0:
                 lock = getattr(self.parent, self.lock_name)
@@ -174,7 +173,10 @@ class UltraDict(collections.UserDict):
             }
 
         def cleanup(self):
-            del self.lock
+            self.ctx.__exit__(None, None, None)
+            del self.pid_remote
+            del self.lock_atomic
+            del self.ctx
 
         def print_status(self):
             import pprint
@@ -183,16 +185,14 @@ class UltraDict(collections.UserDict):
         def __repr__(self):
             return(f"{self.__class__.__name__} @{hex(id(self))} lock_name={self.lock_name!r}, has_lock={self.has_lock}, pid={self.pid})")
 
-        def __enter__(self):
-            self.aquire()
-
-        def __exit__(self, type, value, traceback):
-            self.release()
+        __enter__ = acquire
+        __exit__ = release
 
     __slots__ = 'name', 'control', 'buffer', 'buffer_size', 'lock', 'shared_lock', \
         'update_stream_position', 'full_dump_counter', 'full_dump_memory', 'full_dump_size'
 
-    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, **kwargs):
+    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None,
+            auto_unlink = True, **kwargs):
 
         assert buffer_size < 2**32
         self.buffer_size = buffer_size
@@ -206,7 +206,7 @@ class UltraDict(collections.UserDict):
 
         # Small 300 bytes of shared memory where we store the runtime state
         # of our update stream
-        self.control = self.get_memory(create=True, name=name, size=300)
+        self.control = self.get_memory(create=True, name=name, size=1000)
 
         # Memoryviews to the right buffer position in self.control
         self.update_stream_position_remote = self.control.buf[ 0:  4]
@@ -259,7 +259,10 @@ class UltraDict(collections.UserDict):
         # Load all data from shared memory
         self.apply_update()
 
-        atexit.register(self.cleanup)
+        if auto_unlink:
+            atexit.register(self.unlink)
+        else:
+            atexit.register(self.cleanup)
 
 #    def __getstate__(self):
 #        """Return state values to be pickled."""
@@ -281,6 +284,9 @@ class UltraDict(collections.UserDict):
             try:
                 memory = multiprocessing.shared_memory.SharedMemory(name=name)
                 #log.debug('Attached shared memory: ', memory.name)
+                
+                # TODO: Load config from leader
+
                 return memory
             except FileNotFoundError as e: pass
 
@@ -295,6 +301,7 @@ class UltraDict(collections.UserDict):
 
         raise Exception("Could not get memory: ", name)
 
+    #@profile
     def dump(self):
         """ Dump the full dict into shared memory """
 
@@ -352,6 +359,7 @@ class UltraDict(collections.UserDict):
 
             return full_dump_memory
 
+    #@profile
     def load(self, force=False):
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
@@ -387,6 +395,7 @@ class UltraDict(collections.UserDict):
         else:
             log.warn("Cannot load full dump, no new data available")
 
+    #@profile
     def append_update(self, key, item, delete=False):
         """ Append dict changes to shared memory stream """
 
@@ -403,6 +412,9 @@ class UltraDict(collections.UserDict):
             #log.debug("Pos: ", start_position, end_position, self.buffer_size)
             if end_position > self.buffer_size:
                 #log.debug("Buffer is full")
+                # This is necessary in case a load() and dump() is necessary
+                self.apply_update()
+                self.data.__setitem__(key, item)
                 self.dump()
                 return
         
@@ -415,7 +427,9 @@ class UltraDict(collections.UserDict):
             self.update_stream_position = end_position
             self.update_stream_position_remote[:] = end_position.to_bytes(4, 'little')
             #log.debug("Update counter increment from {} by {} to {}", start_position, len(marshalled), end_position)
+        return True
 
+    #@profile
     def apply_update(self):
         """ Apply dict changes from shared memory stream """
 
@@ -467,7 +481,6 @@ class UltraDict(collections.UserDict):
         self.append_update(key, b'', delete=True)
         # TODO: Do something if append_update() fails
 
-
     def __setitem__(self, key, item):
         #log.debug("__setitem__ {}, {}", key, item)
 
@@ -484,6 +497,10 @@ class UltraDict(collections.UserDict):
         self.apply_update()
         #log.debug("__getitem__ =>", self.data[key])
         return self.data[key]
+
+    def __len__(self):
+        self.apply_update()
+        return len(self.data)
 
     def __repr__(self):
         self.apply_update()
@@ -539,8 +556,7 @@ class UltraDict(collections.UserDict):
         if force or hasattr(self.control, 'created_by_ultra'):
             self.control.unlink()
             self.buffer.unlink()
-
-        self.unlink_by_name(full_dump_name)
+            self.unlink_by_name(full_dump_name)
 
 
     def unlink_by_name(self, name):

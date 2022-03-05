@@ -2,22 +2,19 @@
 # Two processes incrementing a counter in parallel
 #
 # In this example we use the shared_lock=True parameter.
-# This uses the atomic package internally for locking.
-# 
-# Unfortunately, this makes writing values to the dict rather slow,
-# due to the overhead for aquiring the shared lock,
-# so think carefully when you really need it.
+# This uses the atomics package internally for locking.
 #
+# This way of shared locking is save accross independent
+# processes but it is slower than using an `multiprocessing.RLock()`.
+
+import sys
+sys.path.insert(0, '/home/ronny/calltoaction')
 
 from UltraDict import UltraDict
 
-#from utils import log
-
-#log.set_level(log.Levels.warn)
-
 import multiprocessing, time
 
-count = 1000
+count = 100000
 
 def process1(name, target, x):
     # Connect to the existing ultra dict
@@ -29,7 +26,7 @@ def process1(name, target, x):
             # Under the lock, we can safely read, modify and
             # write back any values in the shared dict
             d['counter'] += 1
-            print("counter: ", d['counter'], i, x)
+            #print("counter: ", d['counter'], i, x)
 
 if __name__ == '__main__':
 
@@ -64,5 +61,3 @@ if __name__ == '__main__':
     print(ultra)
 
     print("Counter: ", ultra['counter'], ' == ', count)
-
-    ultra.unlink()
