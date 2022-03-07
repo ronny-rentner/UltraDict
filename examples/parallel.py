@@ -1,12 +1,12 @@
 #
-# Two processes incrementing a counter in parallel
+# Two processes are incrementing a counter in parallel
 #
 # In this example we use the shared_lock=True parameter.
-# UltraDict uses the atomics package internally for shared locking.
-#
 # This way of shared locking is save accross independent
-# processes but it is slower than using the other built-in alternative:
-# `multiprocessing.RLock()`.
+#
+# UltraDict uses the atomics package internally for shared locking.
+# processes but it is slower than using the other built-in alternative
+# which is using `multiprocessing.RLock()`.
 
 import sys
 sys.path.insert(0, '..')
@@ -24,22 +24,21 @@ def run(name, target, x):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
         with d.lock:
-            # Under the lock, we can safely read, modify and
-            # write back any values in the shared dict
+            # Under the lock, we can safely read, modify and write back any values
+            # in the shared dict and be sure that nobody else has modified them
+            # between reading and writing.
             d['counter'] += 1
             #print("counter: ", d['counter'], i, x)
 
 if __name__ == '__main__':
 
-    # No name provided, create a new dict with random name
+    # No name provided, create a new dict with random name.
+    # To make it work under Windows, we need to set a static `full_dump_size`
     ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000)
-    ultra['some-key'] = 'some value'
     ultra['counter'] = 0
 
     # Our children will use the name to attach to the existing dict
     name = ultra.name
-
-    #print(ultra)
 
     ctx = multiprocessing.get_context("spawn")
 
@@ -56,8 +55,5 @@ if __name__ == '__main__':
     p2.join()
 
     print ("Joined 2 processes")
-
-    ultra.print_status()
-    print(ultra)
 
     print("Counter: ", ultra['counter'], ' == ', count)

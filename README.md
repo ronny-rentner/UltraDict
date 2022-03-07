@@ -1,12 +1,13 @@
 # UltraDict
 Sychronized, streaming Python dictionary that uses shared memory as a backend
 
-**Warning: This is an early hack. There are not unit tests and so on. Not stable!**
+**Warning: This is an early hack. There only few unit tests and so on. Maybe not stable!**
 
 Features:
-* Fast
+* Fast (compared to other shareing solutions)
 * No running manager processes
 * Works in spawn and fork context
+* Safe locking between independent processes
 * Tested with Python >= v3.9 on Linux and Windows
 
 ## General Concept
@@ -16,13 +17,15 @@ Features:
 It does so by using a *stream of updates* in a shared memory buffer. This is efficient because only changes have to be serialized.
 
 If the buffer is full, `UltraDict` will automatically do a full dump once to a new shared
-memory space, reset the streaming buffer and continue to stream future updates. All users
+memory space, reset the streaming buffer and continue to stream further updates. All users
 of the `UltraDict` will automatically receive all full dumps and streaming updates.
 
 ## Issues
 
 On Windows, if no process has any handles on the shared memory, the OS will gc all of the shared memory making it inaccessible for
-future processes. 
+future processes. To work around this issue you can currently set `full_dump_size` which will cause the creator
+of the dict to set a static full dump memory of the requested size. This approach has the downsize that you need to plan ahead
+for your data size and if it does not fit into the full dump memory, it will break.
 
 ## Alternatives
 
@@ -131,7 +134,7 @@ Python 3.9.2 on linux
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, **kwargs)`
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, auto_unlink=True, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
@@ -159,6 +162,10 @@ UltraDict will use a multiprocessing.RLock() instead which works well in fork co
 might be necessary on Windows depending on your write behaviour. On Windows, the full dump memory goes
 away if the creator process goes away. Thus you must plan ahead which processes will be writing and creating
 full dumps.
+
+`auto_unlink`: If True, the creator of the shared memory will automatically unlink the handle at exit so
+it is not visible or accessible to new processes. All existing, still connected processes can continue to use the
+dict.
 
 ## Advanced usage
 

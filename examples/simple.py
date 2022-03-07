@@ -15,7 +15,7 @@ count = 100_000
 if __name__ == '__main__':
 
     # No name provided, create a new dict with random name
-    ultra = UltraDict(auto_unlink = False)
+    ultra = UltraDict()
     # Connect `other` dict to `ultra` dict via `name`
     other = UltraDict(name=ultra.name)
 

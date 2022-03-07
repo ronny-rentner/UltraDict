@@ -474,6 +474,7 @@ class UltraDict(collections.UserDict):
 
     def __delitem__(self, key):
         #log.debug("__delitem__ {}", key)
+        self.apply_update()
 
         # Update our local copy
         self.data.__delitem__(key)
@@ -483,6 +484,7 @@ class UltraDict(collections.UserDict):
 
     def __setitem__(self, key, item):
         #log.debug("__setitem__ {}, {}", key, item)
+        self.apply_update()
 
         # Update our local copy
         # It's important for the integrity to do this first
