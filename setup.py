@@ -12,11 +12,7 @@ from pathlib import Path
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-date = datetime.datetime.now().strftime("%Y.%m.%d")
-rev = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii')
-
-#version = f'0.1.{date}.{rev}'
-version = f'0.0.2.{rev}'
+version = f'0.0.3'
 
 print(version)
 

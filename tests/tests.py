@@ -37,13 +37,6 @@ class TestUltradict(unittest.TestCase):
 
         self.assertEqual(len(other.data['huge']), length)
 
-    def test_split(self):
-        s = 'hello world'
-        self.assertEqual(s.split(), ['hello', 'world'])
-        # check that s.split fails when the separator is not a string
-        with self.assertRaises(TypeError):
-            s.split(2)
-
     def testParameterPassing(self):
         ultra = UltraDict(shared_lock=True, buffer_size=4096*8, full_dump_size=4096*8)
         # Connect `other` dict to `ultra` dict via `name`
@@ -55,6 +48,7 @@ class TestUltradict(unittest.TestCase):
         self.assertEqual(ultra.buffer_size, other.buffer_size)
 
     def testFullDump(self):
+        # TODO
         pass
 
 if __name__ == '__main__':

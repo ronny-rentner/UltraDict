@@ -39,8 +39,9 @@ There are many alternatives:
 
 ## How to use?
 
-In one process:
+### Simple
 
+In one Python REPL:
 ```python
 Python 3.9.2 on linux
 >>> 
@@ -48,25 +49,55 @@ Python 3.9.2 on linux
 >>> ultra = UltraDict({ 1:1 }, some_key='some_value')
 >>> ultra
 {1: 1, 'some_key': 'some_value'}
->>> orig = dict({ 1:1 }, some_key='some_value')
->>> orig
-{1: 1, 'some_key': 'some_value'}
 >>>
 >>> # We need the shared memory name in the other process.
 >>> ultra.name
 'psm_ad73da69'
 ```
 
-In another process:
-
+In another Python REPL:
 ```python
 Python 3.9.2 on linux
 >>> 
 >>> from UltraDict import UltraDict
 >>> # Connect to the shared memory with the name above
->>> ultra = UltraDict(name='psm_ad73da69')
->>> ultra
+>>> other = UltraDict(name='psm_ad73da69')
+>>> other
 {1: 1, 'some_key': 'some_value'}
+>>> other[2] = 2
+```
+
+Back in the first Python REPL:
+```python
+>>> ultra[2]
+2
+```
+
+### Nested
+
+In one Python REPL:
+```python
+Python 3.9.2 on linux
+>>> from UltraDict import UltraDict
+>>> ultra = UltraDict(recurse=True)
+>>> ultra['nested'] = { 'counter': 0 }
+>>> type(ultra['nested'])
+<class 'UltraDict.UltraDict'>
+>>> ultra.name
+'psm_0a2713e4'
+```
+
+In another Python REPL:
+```python
+>>> from UltraDict import UltraDict
+>>> other = UltraDict(name='psm_0a2713e4')
+>>> other['nested']['counter'] += 1
+```
+
+Back in the first Python REPL:
+```python
+>>> ultra['nested']['counter']
+1
 ```
 
 ## Performance comparison
