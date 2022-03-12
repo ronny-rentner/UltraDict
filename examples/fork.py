@@ -49,5 +49,3 @@ if __name__ == '__main__':
     #ultra.lock.print_status()
 
     print("Counter: ", ultra['counter'], ' == ', count)
-
-    ultra.unlink()
