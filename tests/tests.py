@@ -44,5 +44,18 @@ class TestUltradict(unittest.TestCase):
         with self.assertRaises(TypeError):
             s.split(2)
 
+    def testParameterPassing(self):
+        ultra = UltraDict(shared_lock=True, buffer_size=4096*8, full_dump_size=4096*8)
+        # Connect `other` dict to `ultra` dict via `name`
+        other = UltraDict(name=ultra.name)
+
+        self.assertIsInstance(ultra.lock, ultra.SharedLock)
+        self.assertIsInstance(other.lock, other.SharedLock)
+
+        self.assertEqual(ultra.buffer_size, other.buffer_size)
+
+    def testFullDump(self):
+        pass
+
 if __name__ == '__main__':
     unittest.main()

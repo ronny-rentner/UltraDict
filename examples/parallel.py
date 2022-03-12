@@ -19,7 +19,7 @@ count = 100000
 
 def run(name, target, x):
     # Connect to the existing ultra dict by its name
-    d = UltraDict(name=name, shared_lock=True)
+    d = UltraDict(name=name, shared_lock=True, auto_unlink=False)
     for i in range(target): 
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     # No name provided, create a new dict with random name.
     # To make it work under Windows, we need to set a static `full_dump_size`
-    ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000)
+    ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000, auto_unlink=False)
     ultra['counter'] = 0
 
     # Our children will use the name to attach to the existing dict

@@ -17,6 +17,6 @@ setup(
     package_dir={'UltraDict': '.'},
     packages=['UltraDict'],
     zip_safe=False,
-    ext_modules=Cython.Build.cythonize(ext),
+    ext_modules=Cython.Build.cythonize(ext, compiler_directives={'language_level' : "3"}),
     setup_requires=['cython>=0.24.1'],
 )

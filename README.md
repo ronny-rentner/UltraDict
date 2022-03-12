@@ -9,6 +9,7 @@ Features:
 * Works in spawn and fork context
 * Safe locking between independent processes
 * Tested with Python >= v3.9 on Linux and Windows
+* Optional recursion for nested dicts
 
 ## General Concept
 
@@ -134,7 +135,7 @@ Python 3.9.2 on linux
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None, auto_unlink=True, **kwargs)`
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=True, recurse=False, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
@@ -150,7 +151,7 @@ Whenever the buffer is full, a full dump will be created. A new shared memory is
 big enough for the full dump. Afterwards the streaming buffer is reset.  All other user of the
 dict will automatically load the full dump and continue with the reset streaming buffer.
 
-`serializer`: Use a different serialized from the default marshal, e. g. pickle, dill, cpickle, json. The callable
+`serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, json. The callable
 provided must support the methods *loads()* and *dumps()*
 
 `shared_lock`: When writing to the same dict at the same time from multiple, independent processes,
@@ -167,9 +168,11 @@ full dumps.
 it is not visible or accessible to new processes. All existing, still connected processes can continue to use the
 dict.
 
+`recurse`: If True, any nested dict objects will be automaticall wrapped in an `UltraDict` allowing transparent nested updates.
+
 ## Advanced usage
 
-See `example.py` and `example_fork.py`
+See `examples` folder
 
 ```python
 >>> ultra = UltraDict({ 'init': 'some initial data' }, name='my-name', buffer_size=100_000)

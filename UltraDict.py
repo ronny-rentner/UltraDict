@@ -18,7 +18,7 @@
 # limitations under the License.
 
 import multiprocessing, multiprocessing.shared_memory
-import collections, atexit, enum, time, marshal, sys
+import collections, atexit, enum, time, marshal, sys, pickle
 
 try:
     # Needed for the shared locked
@@ -59,7 +59,7 @@ remove_shm_from_resource_tracker()
 
 
 
-class UltraDict(collections.UserDict):
+class UltraDict(collections.UserDict, dict):
 
     class SharedLock():
         """
@@ -189,13 +189,27 @@ class UltraDict(collections.UserDict):
         __exit__ = release
 
     __slots__ = 'name', 'control', 'buffer', 'buffer_size', 'lock', 'shared_lock', \
-        'update_stream_position', 'full_dump_counter', 'full_dump_memory', 'full_dump_size'
+        'update_stream_position', 'update_stream_position_remote', \
+        'full_dump_counter', 'full_dump_memory', 'full_dump_size', \
+        'serializer', \
+        'lock_pid_remote', \
+        'lock_remote', \
+        'full_dump_counter_remote', \
+        'full_dump_static_size_remote', \
+        'shared_lock_remote', \
+        'recurse_remote', \
+        'full_dump_memory_name_remote', \
+        'data', 'recurse'
 
-    def __init__(self, *args, name=None, buffer_size=10000, serializer=marshal, shared_lock=False, full_dump_size=None,
-            auto_unlink = True, **kwargs):
+    def __init__(self, *args, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None,
+            auto_unlink=True, recurse=False, **kwargs):
+
+        if sys.platform == 'win32':
+            buffer_size = -(buffer_size // -4096) * 4096
+            if full_dump_size:
+                full_dump_size = -(full_dump_size // -4096) * 4096
 
         assert buffer_size < 2**32
-        self.buffer_size = buffer_size
 
         # Local position, ie. the last position we have processed from the stream
         self.update_stream_position  = 0
@@ -214,6 +228,8 @@ class UltraDict(collections.UserDict):
         self.lock_remote                   = self.control.buf[ 8: 10]
         self.full_dump_counter_remote      = self.control.buf[10: 14]
         self.full_dump_static_size_remote  = self.control.buf[14: 18]
+        self.shared_lock_remote            = self.control.buf[18: 19]
+        self.recurse_remote                = self.control.buf[19: 20]
         self.full_dump_memory_name_remote  = self.control.buf[20:275]
 
         self.name = self.control.name
@@ -222,6 +238,7 @@ class UltraDict(collections.UserDict):
 
         # Actual stream buffer that contains marshalled data of changes to the dict
         self.buffer = self.get_memory(create=True, name=self.name + '_memory', size=buffer_size)
+        self.buffer_size = self.buffer.size
 
         self.full_dump_memory = None
 
@@ -229,23 +246,36 @@ class UltraDict(collections.UserDict):
         # Warning: Issues on Windows when the process ends that has created the full dump memory
         self.full_dump_size = None
 
+        if hasattr(self.control, 'created_by_ultra'):
+            if recurse:
+                self.recurse_remote[0:1] = b'1'
+
+            if shared_lock:
+                self.shared_lock_remote[0:1] = b'1'
+
+            # We created the control memory, thus let's check if we need to create the 
+            # full dump memory as well
+            if full_dump_size:
+                self.full_dump_size = full_dump_size
+                self.full_dump_static_size_remote[:] = full_dump_size.to_bytes(4, 'little')
+
+                self.full_dump_memory = self.get_memory(create=True, name=self.name + '_full', size=full_dump_size)
+                self.full_dump_memory_name_remote[:] = self.full_dump_memory.name.encode('utf-8').ljust(255)
+
         # We just attached to the existing control
-        if not hasattr(self.control, 'created_by_ultra'):
+        else:
             # Check if we have a fixed size full dump memory
             size = int.from_bytes(self.full_dump_static_size_remote, 'little')
+
+            shared_lock = self.shared_lock_remote[0:1] == b'1'
+            recurse = self.recurse_remote[0:1] == b'1'
+
             # Got existing size of full dump memory, that must mean it's static size
             # and we should attach to it
             if size > 0:
                 self.full_dump_size = size
                 self.full_dump_memory = self.get_memory(create=False, name=self.name + '_full')
-        # We created the control memory, thus let's check if we need to create the 
-        # full dump memory as well
-        elif full_dump_size:
-            self.full_dump_size = full_dump_size
-            self.full_dump_static_size_remote[:] = full_dump_size.to_bytes(4, 'little')
-
-            self.full_dump_memory = self.get_memory(create=True, name=self.name + '_full', size=full_dump_size)
-            self.full_dump_memory_name_remote[:] = self.full_dump_memory.name.encode('utf-8').ljust(255)
+            
 
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
@@ -253,6 +283,7 @@ class UltraDict(collections.UserDict):
         else:
             self.lock = multiprocessing.RLock()
 
+        self.recurse = recurse
 
         super().__init__(*args, **kwargs)
 
@@ -264,13 +295,9 @@ class UltraDict(collections.UserDict):
         else:
             atexit.register(self.cleanup)
 
-#    def __getstate__(self):
-#        """Return state values to be pickled."""
-#        return (self.name, self.data, self.update_stream_position, self.full_dump_counter)
-#
-#    def __setstate__(self, state):
-#        """Restore state from the unpickled state values."""
-#        self.name, self.data, self.update_stream_position, self.full_dump_counter = state
+    def __reduce__(self):
+        from functools import partial
+        return (partial(self.__class__, name=self.name), ())
 
     def get_memory(self, *, create=True, name=None, size=0):
         """
@@ -486,6 +513,10 @@ class UltraDict(collections.UserDict):
         #log.debug("__setitem__ {}, {}", key, item)
         self.apply_update()
 
+        if self.recurse:
+            if type(item) == dict:
+                item = UltraDict(item, recurse=True)
+
         # Update our local copy
         # It's important for the integrity to do this first
         self.data.__setitem__(key, item)
@@ -500,6 +531,14 @@ class UltraDict(collections.UserDict):
         #log.debug("__getitem__ =>", self.data[key])
         return self.data[key]
 
+    def has_key(self, key):
+        self.apply_update()
+        return key in self.data
+
+    def __contains__(self, key):
+        self.apply_update()
+        return key in self.data
+
     def __len__(self):
         self.apply_update()
         return len(self.data)
@@ -510,13 +549,15 @@ class UltraDict(collections.UserDict):
 
     def status(self):
         """ Internal debug helper to get the control state variables """
-        ret = { attr: getattr(self, attr) for attr in self.__slots__ if hasattr(self, attr) }
+        ret = { attr: getattr(self, attr) for attr in self.__slots__ if hasattr(self, attr) and attr != 'data' }
+
         ret['update_stream_position_remote'] = int.from_bytes(self.update_stream_position_remote, 'little')
         ret['lock_pid_remote']               = int.from_bytes(self.lock_pid_remote, 'little')
         ret['lock_remote']                   = int.from_bytes(self.lock_remote, 'little')
         ret['lock']                          = self.lock
         ret['full_dump_counter_remote']      = int.from_bytes(self.full_dump_counter_remote, 'little')
         ret['full_dump_memory_name_remote']  = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip('\x00').strip()
+
         return ret
 
     def print_status(self):
@@ -534,6 +575,8 @@ class UltraDict(collections.UserDict):
         del self.lock_pid_remote
         del self.lock_remote
         del self.full_dump_static_size_remote
+        del self.shared_lock_remote
+        del self.recurse_remote
         del self.full_dump_counter_remote
         del self.full_dump_memory_name_remote
 
@@ -549,6 +592,10 @@ class UltraDict(collections.UserDict):
 
         #Only do cleanup once
         atexit.unregister(self.cleanup)
+
+    def keys(self):
+        self.apply_update()
+        return self.data.keys()
 
     def unlink(self, force=False):
         full_dump_name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
@@ -589,54 +636,75 @@ class UltraDict(collections.UserDict):
 
 #class Mapping(dict):
 #
+#    def __init__(self, *args, **kwargs):
+#        print("__init__", args, kwargs)
+#        super().__init__(*args, **kwargs)
+#
 #    def __setitem__(self, key, item):
+#        print("__setitem__", key, item)
 #        self.__dict__[key] = item
 #
 #    def __getitem__(self, key):
+#        print("__getitem__", key)
 #        return self.__dict__[key]
 #
 #    def __repr__(self):
+#        print("__repr__")
 #        return repr(self.__dict__)
 #
 #    def __len__(self):
+#        print("__len__")
 #        return len(self.__dict__)
 #
 #    def __delitem__(self, key):
+#        print("__delitem__")
 #        del self.__dict__[key]
 #
 #    def clear(self):
+#        print("clear")
 #        return self.__dict__.clear()
 #
 #    def copy(self):
+#        print("copy")
 #        return self.__dict__.copy()
 #
 #    def has_key(self, k):
+#        print("has_key")
 #        return k in self.__dict__
 #
 #    def update(self, *args, **kwargs):
+#        print("update")
 #        return self.__dict__.update(*args, **kwargs)
 #
 #    def keys(self):
+#        print("keys")
 #        return self.__dict__.keys()
 #
 #    def values(self):
+#        print("values")
 #        return self.__dict__.values()
 #
 #    def items(self):
+#        print("items")
 #        return self.__dict__.items()
 #
 #    def pop(self, *args):
+#        print("pop")
 #        return self.__dict__.pop(*args)
 #
 #    def __cmp__(self, dict_):
+#        print("__cmp__")
 #        return self.__cmp__(self.__dict__, dict_)
 #
 #    def __contains__(self, item):
+#        print("__contains__", item)
 #        return item in self.__dict__
 #
 #    def __iter__(self):
+#        print("__iter__")
 #        return iter(self.__dict__)
 #
 #    def __unicode__(self):
+#        print("__unicode__")
 #        return unicode(repr(self.__dict__))
 #
