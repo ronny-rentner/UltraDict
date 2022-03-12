@@ -19,14 +19,14 @@ It does so by using a *stream of updates* in a shared memory buffer. This is eff
 
 If the buffer is full, `UltraDict` will automatically do a full dump once to a new shared
 memory space, reset the streaming buffer and continue to stream further updates. All users
-of the `UltraDict` will automatically receive all full dumps and streaming updates.
+of the `UltraDict` will automatically receive and consume all full dumps and streaming updates.
 
 ## Issues
 
 On Windows, if no process has any handles on the shared memory, the OS will gc all of the shared memory making it inaccessible for
 future processes. To work around this issue you can currently set `full_dump_size` which will cause the creator
-of the dict to set a static full dump memory of the requested size. This approach has the downsize that you need to plan ahead
-for your data size and if it does not fit into the full dump memory, it will break.
+of the dict to set a static full dump memory of the requested size. This full dump memory will live as long as the creator lives.
+This approach has the downside that you need to plan ahead for your data size and if it does not fit into the full dump memory, it will break.
 
 ## Alternatives
 
