@@ -3,10 +3,10 @@
 #
 # In this example we use the shared_lock=True parameter.
 # This way of shared locking is save accross independent
+# processes but it is slower than using the other built-in default
+# which is using `multiprocessing.RLock()`.
 #
 # UltraDict uses the atomics package internally for shared locking.
-# processes but it is slower than using the other built-in alternative
-# which is using `multiprocessing.RLock()`.
 
 import sys
 sys.path.insert(0, '..')
