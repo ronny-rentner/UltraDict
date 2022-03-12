@@ -78,6 +78,7 @@ Back in the first Python REPL:
 In one Python REPL:
 ```python
 Python 3.9.2 on linux
+>>> 
 >>> from UltraDict import UltraDict
 >>> ultra = UltraDict(recurse=True)
 >>> ultra['nested'] = { 'counter': 0 }
@@ -89,6 +90,8 @@ Python 3.9.2 on linux
 
 In another Python REPL:
 ```python
+Python 3.9.2 on linux
+>>> 
 >>> from UltraDict import UltraDict
 >>> other = UltraDict(name='psm_0a2713e4')
 >>> other['nested']['counter'] += 1
