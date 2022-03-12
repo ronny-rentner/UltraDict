@@ -1,7 +1,7 @@
 # UltraDict
 Sychronized, streaming Python dictionary that uses shared memory as a backend
 
-**Warning: This is an early hack. There only few unit tests and so on. Maybe not stable!**
+**Warning: This is an early hack. There are only few unit tests and so on. Maybe not stable!**
 
 Features:
 * Fast (compared to other shareing solutions)
@@ -13,13 +13,14 @@ Features:
 
 ## General Concept
 
-`UltraDict` uses [multiprocessing.shared_memory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize a dict data between multiple processes.
+`UltraDict` uses [multiprocessing.shared_memory](https://docs.python.org/3/library/multiprocessing.shared_memory.html#module-multiprocessing.shared_memory) to synchronize a dict between multiple processes.
 
-It does so by using a *stream of updates* in a shared memory buffer. This is efficient because only changes have to be serialized.
+It does so by using a *stream of updates* in a shared memory buffer. This is efficient because only changes have to be serialized and transferred.
 
-If the buffer is full, `UltraDict` will automatically do a full dump once to a new shared
+If the buffer is full, `UltraDict` will automatically do a full dump to a new shared
 memory space, reset the streaming buffer and continue to stream further updates. All users
-of the `UltraDict` will automatically receive and consume all full dumps and streaming updates.
+of the `UltraDict` will automatically load full dumps and continue using
+streaming updates afterwards.
 
 ## Issues
 
@@ -116,7 +117,7 @@ Python 3.9.2 on linux
 10000
 >>> ultra[500]
 500
->>> # Now let's to some performance testing
+>>> # Now let's do some performance testing
 >>> import multiprocessing, timeit
 >>> orig = dict(ultra)
 >>> len(orig)
@@ -175,28 +176,28 @@ Python 3.9.2 on linux
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
 memory space is attached.
 
-`buffer_size`: Size of the shared memory buffer used for streaming changed of the dict.
+`buffer_size`: Size of the shared memory buffer used for streaming changes of the dict.
 
 The buffer size limits the biggest change that can be streamed, so when you use large values or
 deeply nested dicts you might need a bigger buffer. Otherwise, if the buffer is too small,
-it will fall back to a full dump.
+it will fall back to a full dump. Creating full dumps can be slow, depending on the size of your dict.
 
 Whenever the buffer is full, a full dump will be created. A new shared memory is allocated just
-big enough for the full dump. Afterwards the streaming buffer is reset.  All other user of the
-dict will automatically load the full dump and continue with the reset streaming buffer.
+big enough for the full dump. Afterwards the streaming buffer is reset.  All other users of the
+dict will automatically load the full dump and continue streaming updates.
 
-`serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, json. The callable
-provided must support the methods *loads()* and *dumps()*
+`serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, json.
+The module or object provided must support the methods *loads()* and *dumps()*
 
 `shared_lock`: When writing to the same dict at the same time from multiple, independent processes,
-they need a shared lock to synchornize and not overwrite each other's changes. Shared locks are slow.
-They rely on the [atomics](https://github.com/doodspav/atomics) package for atomic locks. Alternatively,
+they need a shared lock to synchronize and not overwrite each other's changes. Shared locks are slow.
+They rely on the [atomics](https://github.com/doodspav/atomics) package for atomic locks. By default,
 UltraDict will use a multiprocessing.RLock() instead which works well in fork context and is much faster.
 
 `full_dump_size`: If set, uses a static full dump memory instead of dynamically creating it. This
 might be necessary on Windows depending on your write behaviour. On Windows, the full dump memory goes
-away if the creator process goes away. Thus you must plan ahead which processes will be writing and creating
-full dumps.
+away if the process goes away that had created the full dump. Thus you must plan ahead which processes might
+be writing to the dict and therefore creating full dumps.
 
 `auto_unlink`: If True, the creator of the shared memory will automatically unlink the handle at exit so
 it is not visible or accessible to new processes. All existing, still connected processes can continue to use the
@@ -210,8 +211,8 @@ See `examples` folder
 
 ```python
 >>> ultra = UltraDict({ 'init': 'some initial data' }, name='my-name', buffer_size=100_000)
->>> # Lets use a value with 100.000 bytes length, this will not fit into our 100k bytes buffer
->>> # due to the serialization overhead.
+>>> # Let's use a value with 100k bytes length.
+>>> # This will not fit into our 100k bytes buffer due to the serialization overhead.
 >>> ultra[0] = ' ' * 100_000
 >>> ultra.print_status()
 {'buffer': SharedMemory('my-name_memory', size=100000),
@@ -244,14 +245,14 @@ Other things you can do:
 
 >>> # Apply full dump and stream updates to
 >>> # underlying local dict, this is automatically
->>> # called when you normally access the UltraDict,
+>>> # called by accessing the UltraDict in any usual way,
 >>> # but can be useful to call after a forced load.
 >>> ultra.apply_update()
 
->>> # Access uderlying local dict directly
+>>> # Access underlying local dict directly
 >>> ultra.data
 
->>> # Use any serialize you like, given it supports the loads() and dumps() methods
+>>> # Use any serializer you like, given it supports the loads() and dumps() methods
 >>> import pickle 
 >>> ultra = UltraDict(serializer=pickle)
 
