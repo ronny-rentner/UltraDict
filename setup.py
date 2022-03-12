@@ -16,7 +16,7 @@ date = datetime.datetime.now().strftime("%Y.%m.%d")
 rev = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii')
 
 #version = f'0.1.{date}.{rev}'
-version = f'0.1.0.{rev}'
+version = f'0.0.2.{rev}'
 
 print(version)
 
