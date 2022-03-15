@@ -35,6 +35,7 @@ There are many alternatives:
 
  * [multiprocessing.Manager](https://docs.python.org/3/library/multiprocessing.html#managers)
  * [shared-memory-dict](https://github.com/luizalabs/shared-memory-dict)
+ * [mpdict](https://github.com/gatopeich/mpdict)
  * Redis
  * Memcached
 
@@ -260,3 +261,8 @@ Other things you can do:
 >>> ultra.unlink()
 
 ```
+
+## Contributing
+
+Contributions are always welcome!
+
