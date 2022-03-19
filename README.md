@@ -4,7 +4,7 @@ Sychronized, streaming Python dictionary that uses shared memory as a backend
 **Warning: This is an early hack. There are only few unit tests and so on. Maybe not stable!**
 
 Features:
-* Fast (compared to other shareing solutions)
+* Fast (compared to other sharing solutions)
 * No running manager processes
 * Works in spawn and fork context
 * Safe locking between independent processes
