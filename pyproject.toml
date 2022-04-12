@@ -1,3 +1,16 @@
 [build-system]
-requires = ["setuptools", "wheel", "cython"]
-build-backend = "setuptools.build_meta"
+requires        = ["setuptools", "wheel", "cython"]
+build-backend   = "setuptools.build_meta"
+
+[tool.pylint.'MESSAGES CONTROL']
+max-line-length = 140
+
+# Many false positives with pylint unfortuantely and also really wrong things like
+# "unidiomatic-typecheck" or "import-outside-toplevel"
+disable         = ["missing-module-docstring", "missing-class-docstring", "missing-function-docstring",
+                   "unidiomatic-typecheck", "multiple-imports", "fixme", "no-else-return", "unused-argument",
+		   "invalid-name", "import-outside-toplevel", "no-self-use", "method-hidden"]
+
+[tool.pylint.'DESIGN']
+max-attributes  = 22
+good-names-rgxs = "^[_a-z][_a-z0-9]?$"

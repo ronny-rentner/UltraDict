@@ -1,4 +1,6 @@
 import unittest
+import subprocess
+import sys
 
 from UltraDict import UltraDict
 
@@ -6,6 +8,10 @@ class TestUltradict(unittest.TestCase):
 
     def setUp(self):
         pass
+
+    def exec(self, filepath):
+        return subprocess.run([sys.executable, filepath],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     def testCount(self):
         ultra = UltraDict()
@@ -50,6 +56,21 @@ class TestUltradict(unittest.TestCase):
     def testFullDump(self):
         # TODO
         pass
+
+    def testExampleSimple(self):
+        filename = "examples/simple.py"
+        ret = self.exec(filename)
+        self.assertEqual(ret.stdout, b"Length:  100000  ==  100000  ==  100000\n")
+
+    def testExampleParallel(self):
+        filename = "examples/parallel.py"
+        ret = self.exec(filename)
+        self.assertEqual(ret.stdout, b'Started 2 processes..\nJoined 2 processes\nCounter:  100000  ==  100000\n')
+
+    def testExampleNested(self):
+        filename = "examples/nested.py"
+        ret = self.exec(filename)
+        self.assertEqual(ret.stdout, b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}\n")
 
 if __name__ == '__main__':
     unittest.main()

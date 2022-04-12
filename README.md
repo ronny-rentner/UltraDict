@@ -208,7 +208,7 @@ dict.
 
 ## Advanced usage
 
-See `examples` folder
+See [examples](/examples) folder
 
 ```python
 >>> ultra = UltraDict({ 'init': 'some initial data' }, name='my-name', buffer_size=100_000)
@@ -217,20 +217,27 @@ See `examples` folder
 >>> ultra[0] = ' ' * 100_000
 >>> ultra.print_status()
 {'buffer': SharedMemory('my-name_memory', size=100000),
- 'control': SharedMemory('my-name', size=300),
+ 'buffer_size': 100000,
+ 'control': SharedMemory('my-name', size=1000),
  'full_dump_counter': 1,
  'full_dump_counter_remote': 1,
- 'full_dump_lock_pid_remote': 0,
- 'full_dump_lock_remote': 0,
- 'full_dump_memory_name_remote': 'psm_a99c3a83',
- 'lock': <Lock(owner=None)>,
+ 'full_dump_memory': SharedMemory('psm_765691cd', size=100057),
+ 'full_dump_memory_name_remote': 'psm_765691cd',
+ 'full_dump_size': None,
+ 'full_dump_static_size_remote': <memory at 0x7fcbf5ca6580>,
+ 'lock': <RLock(None, 0)>,
  'lock_pid_remote': 0,
  'lock_remote': 0,
  'name': 'my-name',
- 'shared_lock': SharedLock @0x7f0828864040 lock_name='full_dump_lock_remote', has_lock=0, pid=455581),
+ 'recurse': False,
+ 'recurse_remote': <memory at 0x7fcbf5ca6700>,
+ 'serializer': <module 'pickle' from '/usr/lib/python3.9/pickle.py'>,
+ 'shared_lock_remote': <memory at 0x7fcbf5ca6640>,
  'update_stream_position': 0,
  'update_stream_position_remote': 0}
 ```
+
+Note: All status keys ending with `_remote` are stored in the control shared memory space and shared across processes.
 
 Other things you can do:
 ```python

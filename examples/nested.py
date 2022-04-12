@@ -2,13 +2,12 @@
 # Nested example
 #
 # Two dicts `ultra` and `other` are linked together using shared memory.
+# Using `recurse=True` will transparently convert child dicts into UltraDict instances.
 
 import sys
 sys.path.insert(0, '..')
 
 from UltraDict import UltraDict
-
-import pickle
 
 if __name__ == '__main__':
 
@@ -17,21 +16,8 @@ if __name__ == '__main__':
     # Connect `other` dict to `ultra` dict via `name`
     other = UltraDict(name=ultra.name)
 
-    #ultra['nested'] = { 1: 1 }
+    ultra['nested'] = { 'deeper': { 0: 1 } }
 
-    ultra['nested'] = { 'inner': 'value', 'deeper': { 0: 1 } }
-    ultra['nested']['deeper'][0] = 2
+    other['nested']['deeper'][0] += 1
 
-    #print(ultra, type(ultra), isinstance(ultra, dict))
-    #print(other, type(other), isinstance(ultra, dict))
-
-    # No apply_update() done, yet, so they're not equal
-    print(other == ultra)
-
-    other.apply_update()
-
-    # Now they are equal
-    print(other == ultra)
-
-    # Automatically run apply_update()
-    print(ultra, ' == ', other)
+    print(ultra, ' == ' if other == ultra else ' != ', other)
