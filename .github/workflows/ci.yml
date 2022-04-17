@@ -26,9 +26,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pwd
-          ls -la
           pip install -r requirements.txt
+          # Manually install pylint as long as we don't build the wheels
+          pip install pylint
       - name: Run unit tests
         run: python -m unittest
       - name: Run pylint
