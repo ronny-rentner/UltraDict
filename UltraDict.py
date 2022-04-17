@@ -18,6 +18,8 @@
 # limitations under the License.
 #
 
+__all__ = ['UltraDict']
+
 import multiprocessing, multiprocessing.shared_memory
 import collections, atexit, sys, pickle
 
