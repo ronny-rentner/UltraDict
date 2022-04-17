@@ -8,7 +8,7 @@ Features:
 * No running manager processes
 * Works in spawn and fork context
 * Safe locking between independent processes
-* Tested with Python >= v3.9 on Linux and Windows
+* Tested with Python >= v3.8 on Linux and Windows
 * Optional recursion for nested dicts
 
 [![PyPI Package](https://img.shields.io/pypi/v/ultradict.svg)](https://pypi.org/project/ultradict)

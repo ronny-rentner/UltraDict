@@ -29,10 +29,10 @@ try:
 except ModuleNotFoundError:
     pass
 
-try:
-    from utils import log
-except ModuleNotFoundError:
-    import logging as log
+#try:
+#    from utils import log
+#except ModuleNotFoundError:
+#    import logging as log
 
 
 def remove_shm_from_resource_tracker():

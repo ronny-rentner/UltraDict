@@ -1,20 +1,14 @@
+from pathlib import Path
 from setuptools import setup, Extension
-import datetime, subprocess
 import Cython.Build
 
-ext = Extension(
-    name="UltraDict", 
-    sources=["UltraDict.py"],
-)
-
 # read the contents of your README file
-from pathlib import Path
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-version = f'0.0.4'
+version = '0.0.4'
 
-print(version)
+ext = Extension(name="UltraDict", sources=["UltraDict.py"])
 
 setup(
     name='UltraDict',
