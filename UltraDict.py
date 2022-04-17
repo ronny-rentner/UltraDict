@@ -529,7 +529,12 @@ class UltraDict(collections.UserDict, dict):
 
         return self.data
 
-    def update(self, other=None, /, **kwargs):
+    def update(self, other=None, *args, **kwargs):
+        # pylint: disable=arguments-differ, keyword-arg-before-vararg
+
+        # The original signature would be `def update(self, other=None, /, **kwargs)` but
+        # this is not possible with Cython. *args will just be ignored.
+
         #log.debug("update")
         if other is not None:
             for k, v in other.items() if isinstance(other, collections.abc.Mapping) else other:
