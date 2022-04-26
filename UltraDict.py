@@ -20,8 +20,8 @@
 
 __all__ = ['UltraDict']
 
-import multiprocessing, multiprocessing.shared_memory
-import collections, atexit, sys, pickle
+import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
+import collections, atexit, sys, pickle, os
 
 try:
     # Needed for the shared locked
@@ -74,6 +74,9 @@ class UltraDict(collections.UserDict, dict):
     class CannotAttachSharedMemoryException(Exception):
         pass
 
+    class RLock(multiprocessing.synchronize.RLock):
+        pass
+
     class SharedLock():
         """
         Lock stored in shared_memory to provide an additional layer of protection,
@@ -84,19 +87,31 @@ class UltraDict(collections.UserDict, dict):
         This is needed if you write to the shared memory with independent processes.
         """
 
-        __slots__ = 'parent', 'has_lock', 'lock_name', 'lock_remote', 'pid', 'pid_name', 'pid_remote', 'ctx', 'lock_atomic'
+        __slots__ = 'parent', 'has_lock', 'lock_remote', 'pid', 'pid_remote', 'ctx', 'lock_atomic'
+
+        lock_counter_goal = 10_000
 
         def __init__(self, parent, lock_name, pid_name):
             self.parent = parent
             self.has_lock = 0
-            self.lock_name = lock_name
-            self.pid_name = pid_name
+            # `lock_name` contains the name of the attribute that the parent uses
+            # to store the memory view on the remote lock
+            self.lock_remote = getattr(self.parent, lock_name)
             self.pid = multiprocessing.current_process().pid
             # Memoryview
-            self.pid_remote = getattr(self.parent, self.pid_name)
-            self.lock_remote = getattr(self.parent, self.lock_name)
+            self.pid_remote = getattr(self.parent, pid_name)
             self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
             self.lock_atomic = self.ctx.__enter__()
+
+            def after_fork():
+                if self.has_lock:
+                    raise Exception("Release the SharedLock before you fork the process")
+
+                # After forking, we got a new pid
+                self.pid = multiprocessing.current_process().pid
+
+            if sys.platform != 'win32':
+                os.register_at_fork(after_in_child=after_fork)
 
         #@profile
         def acquire(self):
@@ -131,7 +146,7 @@ class UltraDict(collections.UserDict, dict):
                     # TODO: Busy wait? Timeout?
                     #print("wait")
                     counter += 1
-                    if counter > 100_000:
+                    if counter > self.lock_counter_goal:
                         raise self.parent.CannotAcquireLockException("Failed to acquire lock: ", counter)
 
 
@@ -169,39 +184,48 @@ class UltraDict(collections.UserDict, dict):
 
         def reset(self):
             # Risky
-            lock = getattr(self.parent, self.lock_name)
-            lock[:] = b'\x00\x00'
+            self.lock_remote[:] = b'\x00\x00'
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
         def status(self):
-            lock = getattr(self.parent, self.lock_name)
-            pid = getattr(self.parent, self.pid_name)
             return {
-                'lock': int.from_bytes(lock, 'little'),
                 'has_lock': self.has_lock,
-                'lock_remote': lock[0],
+                'lock_remote': int.from_bytes(self.lock_remote, 'little'),
                 'pid': self.pid,
-                'pid_remote': int.from_bytes(pid, 'little'),
+                'pid_remote': int.from_bytes(self.pid_remote, 'little'),
             }
 
-        def cleanup(self):
+        def print_status(self):
+            import pprint
+            pprint.pprint(self.status())
 
+        def cleanup(self):
             self.ctx.__exit__(None, None, None)
             del self.lock_atomic
             del self.pid_remote
             del self.lock_remote
             del self.ctx
 
-        def print_status(self):
-            import pprint
-            pprint.pprint(self.status())
+        def get_remote_pid(self):
+            return int.from_bytes(self.pid_remote, 'little')
+
+        def get_remote_lock(self):
+            return int.from_bytes(self.lock_remote, 'little')
 
         def __repr__(self):
-            return f"{self.__class__.__name__} @{hex(id(self))} lock_name={self.lock_name!r}, has_lock={self.has_lock}, pid={self.pid})"
+            return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={self.lock_remote!r}, has_lock={self.has_lock}, pid={self.pid})"
 
-        __enter__ = acquire
-        __exit__ = release
+        def __enter__(self):
+            self.acquire()
+            return self
+        
+        def __exit__(self, type, value, traceback):
+            self.release()
+            return False
+
+        def __call__(self, block=True, timeout=0):
+            return self
 
     __slots__ = 'name', 'control', 'buffer', 'buffer_size', 'lock', 'shared_lock', \
         'update_stream_position', 'update_stream_position_remote', \
@@ -554,19 +578,20 @@ class UltraDict(collections.UserDict, dict):
 
     def __setitem__(self, key, item):
         #log.debug("__setitem__ {}, {}", key, item)
-        self.apply_update()
+        with self.lock:
+            self.apply_update()
 
-        if self.recurse:
-            if type(item) == dict:
-                item = UltraDict(item, recurse=True)
+            if self.recurse:
+                if type(item) == dict:
+                    item = UltraDict(item, recurse=True)
 
-        # Update our local copy
-        # It's important for the integrity to do this first
-        self.data.__setitem__(key, item)
+            # Update our local copy
+            # It's important for the integrity to do this first
+            self.data.__setitem__(key, item)
 
-        # Append the update to the update stream
-        self.append_update(key, item)
-        # TODO: Do something if append_u int.from_bytes(self.update_stream_position_remote, 'little')pdate() fails
+            # Append the update to the update stream
+            self.append_update(key, item)
+            # TODO: Do something if append_u int.from_bytes(self.update_stream_position_remote, 'little')pdate() fails
 
     def __getitem__(self, key):
         #log.debug("__getitem__ {}", key)
@@ -605,18 +630,18 @@ class UltraDict(collections.UserDict, dict):
         ret['update_stream_position_remote'] = int.from_bytes(self.update_stream_position_remote, 'little')
         ret['lock_pid_remote']               = int.from_bytes(self.lock_pid_remote, 'little')
         ret['lock_remote']                   = int.from_bytes(self.lock_remote, 'little')
-        ret['shared_lock_remote']            = int.from_bytes(self.shared_lock_remote, 'little')
-        ret['recurse_remote']                = int.from_bytes(self.recurse_remote, 'little')
+        ret['shared_lock_remote']            = self.shared_lock_remote[0:1] == b'1'
+        ret['recurse_remote']                = self.recurse_remote[0:1] == b'1'
         ret['lock']                          = self.lock
         ret['full_dump_counter_remote']      = int.from_bytes(self.full_dump_counter_remote, 'little')
         ret['full_dump_memory_name_remote']  = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip('\x00').strip()
 
         return ret
 
-    def print_status(self):
+    def print_status(self, stderr=False):
         """ Internal debug helper to pretty print the control state variables """
         import pprint
-        pprint.pprint(self.status())
+        pprint.pprint(self.status(), stream=sys.stderr if stderr else sys.stdout)
 
     def cleanup(self):
         #log.debug('Cleanup')
