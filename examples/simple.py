@@ -15,7 +15,7 @@ count = 100_000
 if __name__ == '__main__':
 
     # No name provided to create a new dict with random name
-    ultra = UltraDict(shared_lock=True, buffer_size=100_000)
+    ultra = UltraDict(buffer_size=100_000)
     # Connect `other` dict to `ultra` dict via `name`
     other = UltraDict(name=ultra.name)
 
