@@ -2,7 +2,7 @@
 # Two processes are incrementing a counter in parallel
 #
 # In this example we use the shared_lock=True parameter.
-# This way of shared locking is save accross independent
+# This way of shared locking is safe accross independent
 # processes but it is slower than using the built-in default
 # locking method using `multiprocessing.RLock()`.
 #
