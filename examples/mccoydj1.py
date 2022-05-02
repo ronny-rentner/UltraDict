@@ -5,20 +5,19 @@ import multiprocessing
 from UltraDict import UltraDict
 import random
 import string
-import json
-import pickle
 
-serializer=pickle
+name='ultra6'
 
 def P1():
-    ultra = UltraDict(name='ultra6', serializer=serializer)
+    ultra = UltraDict(name=name)
 
     while True:
+        pass
         ultra['P1'] = random.random()
         #ultra['P2']
 
 def P2():
-    ultra = UltraDict(name='ultra6', serializer=serializer)
+    ultra = UltraDict(name=name)
 
     while True:
         chars = "".join([random.choice(string.ascii_lowercase) for i in range(8)])
@@ -27,7 +26,12 @@ def P2():
 
 if __name__ == '__main__':
 
-    ultra = UltraDict({'P1':float(0), 'P2':''}, name='ultra6', buffer_size=100_000, shared_lock=False, auto_unlink=True, serializer=serializer)
+    # Make sure the UltraDict with name='ultra6' does not exist,
+    # it could be left over from a previous crash
+
+    UltraDict.unlink_by_name(name, ignore_error=True)
+
+    ultra = UltraDict({'P1':float(0), 'P2':''}, name=name, buffer_size=10_000, shared_lock=True)
 
     p1 = multiprocessing.Process(target=P1)
     p1.start()
@@ -37,9 +41,7 @@ if __name__ == '__main__':
 
     import time
     while True:
-        #print(ultra)
-        #time.sleep(1)
-        x = ultra
+        print(ultra)
 
     p1.join()
     p2.join()
