@@ -21,7 +21,7 @@
 __all__ = ['UltraDict']
 
 import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
-import collections, atexit, sys, pickle, os
+import atexit, collections, os, pickle, sys, weakref
 
 try:
     # Needed for the shared locked
@@ -74,6 +74,12 @@ class UltraDict(collections.UserDict, dict):
     class CannotAttachSharedMemoryException(Exception):
         pass
 
+    class ParameterMismatchException(Exception):
+        pass
+
+    class MissingDependencyException(Exception):
+        pass
+
     class RLock(multiprocessing.synchronize.RLock):
         pass
 
@@ -95,12 +101,16 @@ class UltraDict(collections.UserDict, dict):
             self.parent = parent
             self.has_lock = 0
             # `lock_name` contains the name of the attribute that the parent uses
-            # to store the memory view on the remote lock
+            # to store the memory view on the remote lock, so `self.lock_remote` is 
+            # referring to a memory view
             self.lock_remote = getattr(self.parent, lock_name)
-            self.pid = multiprocessing.current_process().pid
-            # Memoryview
             self.pid_remote = getattr(self.parent, pid_name)
-            self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
+            self.pid = multiprocessing.current_process().pid
+            try:
+                self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
+            except NameError as e:
+                self.cleanup()
+                raise e
             self.lock_atomic = self.ctx.__enter__()
 
             def after_fork():
@@ -144,7 +154,6 @@ class UltraDict(collections.UserDict, dict):
                 else:
                     # Oh no, already locked by someone else
                     # TODO: Busy wait? Timeout?
-                    #print("wait")
                     counter += 1
                     if counter > self.lock_counter_goal:
                         raise self.parent.CannotAcquireLockException("Failed to acquire lock: ", counter)
@@ -201,11 +210,13 @@ class UltraDict(collections.UserDict, dict):
             pprint.pprint(self.status())
 
         def cleanup(self):
-            self.ctx.__exit__(None, None, None)
-            del self.lock_atomic
-            del self.pid_remote
+            if hasattr(self, 'ctx'):
+                self.ctx.__exit__(None, None, None)
+                del self.ctx
+            if hasattr(self, 'lock_atomic'):
+                del self.lock_atomic
             del self.lock_remote
-            del self.ctx
+            del self.pid_remote
 
         def get_remote_pid(self):
             return int.from_bytes(self.pid_remote, 'little')
@@ -240,8 +251,8 @@ class UltraDict(collections.UserDict, dict):
         'full_dump_memory_name_remote', \
         'data', 'recurse'
 
-    def __init__(self, *args, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None,
-            auto_unlink=True, recurse=False, **kwargs):
+    def __init__(self, *args, name=None, buffer_size=10000, serializer=pickle, shared_lock=None, full_dump_size=None,
+            auto_unlink=True, recurse=None, **kwargs):
 
         # On win32, only multiples of 4k are allowed
         if sys.platform == 'win32':
@@ -263,7 +274,6 @@ class UltraDict(collections.UserDict, dict):
         self.control = self.get_memory(create=True, name=name, size=1000)
 
         self.init_remotes()
-
         self.name = self.control.name
 
         self.serializer = serializer
@@ -302,7 +312,11 @@ class UltraDict(collections.UserDict, dict):
             # Check if we have a fixed size full dump memory
             size = int.from_bytes(self.full_dump_static_size_remote, 'little')
 
-            shared_lock = self.shared_lock_remote[0:1] == b'1'
+            shared_lock_remote = self.shared_lock_remote[0:1] == b'1'
+            if shared_lock is None:
+                shared_lock = shared_lock_remote
+            elif shared_lock != shared_lock_remote:
+                raise self.ParameterMismatchException(f"shared_lock={shared_lock} was set but the creator has used shared_lock={shared_lock_remote}")
             recurse = self.recurse_remote[0:1] == b'1'
 
             # Got existing size of full dump memory, that must mean it's static size
@@ -311,10 +325,13 @@ class UltraDict(collections.UserDict, dict):
                 self.full_dump_size = size
                 self.full_dump_memory = self.get_memory(create=False, name=self.name + '_full')
 
-
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
-            self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
+            try:
+                self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
+            except NameError:
+                self.cleanup()
+                raise self.MissingDependencyException("Install `atomics` Python package to use shared_lock=True")
         else:
             self.lock = multiprocessing.RLock()
 
@@ -358,7 +375,8 @@ class UltraDict(collections.UserDict, dict):
         from functools import partial
         return (partial(self.__class__, name=self.name), ())
 
-    def get_memory(self, *, create=True, name=None, size=0):
+    @staticmethod
+    def get_memory(*, create=True, name=None, size=0):
         """
         Attach an existing SharedMemory object with `name`.
 
@@ -386,21 +404,26 @@ class UltraDict(collections.UserDict, dict):
             #log.debug('Created shared memory: ', memory.name)
             return memory
 
-        raise self.CannotAttachSharedMemoryException("Could not get memory: ", name)
+        raise UltraDict.CannotAttachSharedMemoryException(f"Could not get memory '{name}'")
 
     #@profile
     def dump(self):
         """ Dump the full dict into shared memory """
 
         old = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+        old_full_dump_memory = None
+
         with self.lock:
             self.apply_update()
+            if old:
+                old_full_dump_memory = self.get_memory(create=False, name=old)
             marshalled = self.serializer.dumps(self.data)
             length = len(marshalled)
             #log.info("Dumped dict with {} elements to {} bytes", len(self), len(marshalled))
 
             # If we don't have a fixed size, let's create full dump memory dynamically
             # TODO: This causes issues on Windows because the memory is not persistant
+            #       Maybe switch to mmaped file?
             if self.full_dump_size and self.full_dump_memory:
                 full_dump_memory = self.full_dump_memory
             else:
@@ -429,10 +452,6 @@ class UltraDict(collections.UserDict, dict):
             # Write body
             full_dump_memory.buf[6:6+length] = marshalled
 
-            # If the old memory was dynamically created, delete it
-            if old and old != full_dump_memory.name and not self.full_dump_size:
-                self.unlink_by_name(old)
-
             # On Windows, if we close it, it cannot be read anymore by anyone else.
             if not self.full_dump_size and sys.platform != 'win32':
                 full_dump_memory.close()
@@ -445,6 +464,10 @@ class UltraDict(collections.UserDict, dict):
             self.update_stream_position = 0
             self.update_stream_position_remote[:] = b'\x00\x00\x00\x00'
 
+            # If the old full dump memory was dynamically created, delete it
+            if old and old != full_dump_memory.name and not self.full_dump_size:
+                self.unlink_by_name(old)
+
             return full_dump_memory
 
     #@profile
@@ -452,10 +475,11 @@ class UltraDict(collections.UserDict, dict):
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
         if force or (self.full_dump_counter < full_dump_counter):
-            name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
             if self.full_dump_size and self.full_dump_memory:
                 full_dump_memory = self.full_dump_memory
             else:
+                name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+                assert len(name) >= 1
                 full_dump_memory = self.get_memory(create=False, name=name)
             buf = full_dump_memory.buf
             assert buf
@@ -487,34 +511,36 @@ class UltraDict(collections.UserDict, dict):
     def append_update(self, key, item, delete=False):
         """ Append dict changes to shared memory stream """
 
+        # Must own a lock before running this function
+
         # If mode is 0, it means delete the key from the dict
         # If mode is 1, it means update the key
         mode = not delete
         marshalled = self.serializer.dumps((mode, key, item))
         length = len(marshalled)
 
-        with self.lock:
-            start_position = int.from_bytes(self.update_stream_position_remote, 'little')
-            # 6 bytes for the header
-            end_position = start_position + length + 6
-            #log.debug("Pos: ", start_position, end_position, self.buffer_size)
-            if end_position > self.buffer_size:
-                #log.debug("Buffer is full")
-                # This is necessary in case a load() and dump() is necessary
-                self.apply_update()
-                self.data.__setitem__(key, item)
-                self.dump()
-                return
+        start_position = int.from_bytes(self.update_stream_position_remote, 'little')
+        # 6 bytes for the header
+        end_position = start_position + length + 6
+        #log.debug("pos: ", start_position, end_position, self.buffer_size)
+        if end_position > self.buffer_size:
+            #log.debug("buffer is full")
 
-            marshalled = b'\x00' + length.to_bytes(4, 'little') + b'\x00' + marshalled
+            # todo: is is necessary? apply_update() is also done inside dump()
+            self.apply_update()
+            self.data.__setitem__(key, item)
+            self.dump()
+            return
 
-            # Write body with the real data
-            self.buffer.buf[start_position:end_position] = marshalled
+        marshalled = b'\x00' + length.to_bytes(4, 'little') + b'\x00' + marshalled
 
-            # Inform others about it
-            self.update_stream_position = end_position
-            self.update_stream_position_remote[:] = end_position.to_bytes(4, 'little')
-            #log.debug("Update counter increment from {} by {} to {}", start_position, len(marshalled), end_position)
+        # Write body with the real data
+        self.buffer.buf[start_position:end_position] = marshalled
+
+        # Inform others about it
+        self.update_stream_position = end_position
+        self.update_stream_position_remote[:] = end_position.to_bytes(4, 'little')
+        #log.debug("Update counter increment from {} by {} to {}", start_position, len(marshalled), end_position)
 
     #@profile
     def apply_update(self):
@@ -568,13 +594,14 @@ class UltraDict(collections.UserDict, dict):
 
     def __delitem__(self, key):
         #log.debug("__delitem__ {}", key)
-        self.apply_update()
+        with self.lock:
+            self.apply_update()
 
-        # Update our local copy
-        self.data.__delitem__(key)
+            # Update our local copy
+            self.data.__delitem__(key)
 
-        self.append_update(key, b'', delete=True)
-        # TODO: Do something if append_update() fails
+            self.append_update(key, b'', delete=True)
+            # TODO: Do something if append_update() fails
 
     def __setitem__(self, key, item):
         #log.debug("__setitem__ {}, {}", key, item)
@@ -646,10 +673,12 @@ class UltraDict(collections.UserDict, dict):
     def cleanup(self):
         #log.debug('Cleanup')
 
-        if hasattr(self.lock, 'cleanup'):
+        if hasattr(self, 'lock') and hasattr(self.lock, 'cleanup'):
             self.lock.cleanup()
 
         self.del_remotes()
+
+        #del self.name
 
         self.control.close()
         self.buffer.close()
@@ -684,17 +713,18 @@ class UltraDict(collections.UserDict, dict):
             self.control.unlink()
             self.buffer.unlink()
             if full_dump_name:
-                self.unlink_by_name(full_dump_name)
+                self.unlink_by_name(full_dump_name, ignore_error=True)
 
-
-    def unlink_by_name(self, name):
+    @staticmethod
+    def unlink_by_name(name, ignore_error=False):
         try:
-            memory = self.get_memory(create=False, name=name)
+            memory = UltraDict.get_memory(create=False, name=name)
             #log.debug("Unlinking memory '{}'", name)
             memory.close()
             memory.unlink()
-        except (KeyError, ):
-            pass
+        except UltraDict.CannotAttachSharedMemoryException as e:
+            if not ignore_error:
+                raise e
 
 
 
