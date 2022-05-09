@@ -650,21 +650,21 @@ class UltraDict(collections.UserDict, dict):
                     log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
                     return self.apply_update()
 
-                print("before: ", pos)
-                print(bytes(self.buffer.buf[:]))
-                self.print_status()
+                #print("before: ", pos)
+                #print(bytes(self.buffer.buf[:]))
+                #self.print_status()
 
                 # As a last resort, let's get a lock. This way we are safe but slow.
                 with self.lock:
-                    print("lock: ", pos)
-                    print(bytes(self.buffer.buf[:]))
-                    self.print_status()
+                    #print("lock: ", pos)
+                    #print(bytes(self.buffer.buf[:]))
+                    #self.print_status()
                     if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
                         log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
                         return self.apply_update()
-                    print("after: ", pos)
-                    print(bytes(self.buffer.buf[:]))
-                    self.print_status()
+                    #print("after: ", pos)
+                    #print(bytes(self.buffer.buf[:]))
+                    #self.print_status()
                 log.exception(f'Exception {e}')
                 raise e
 
