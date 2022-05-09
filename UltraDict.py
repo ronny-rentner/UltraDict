@@ -21,7 +21,10 @@
 __all__ = ['UltraDict']
 
 import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
-import atexit, collections, os, pickle, sys, weakref
+import atexit, collections, os, pickle, sys, time
+
+#import sys
+#sys.path.insert(0, '..')
 
 try:
     # Needed for the shared locked
@@ -29,11 +32,12 @@ try:
 except ModuleNotFoundError:
     pass
 
-#try:
-#    from utils import log
-#except ModuleNotFoundError:
-#    import logging as log
+try:
+    from .utils import log
+    log.log_targets = [ sys.stderr ]
 
+except ModuleNotFoundError:
+    import logging as log
 
 def remove_shm_from_resource_tracker():
     """
@@ -93,7 +97,8 @@ class UltraDict(collections.UserDict, dict):
         This is needed if you write to the shared memory with independent processes.
         """
 
-        __slots__ = 'parent', 'has_lock', 'lock_remote', 'pid', 'pid_remote', 'ctx', 'lock_atomic'
+        __slots__ = 'parent', 'has_lock', 'lock_remote', 'pid', 'pid_remote', 'ctx', 'lock_atomic', \
+            'lock_error_timestamp', 'lock_error_pid'
 
         lock_counter_goal = 10_000
 
@@ -106,6 +111,7 @@ class UltraDict(collections.UserDict, dict):
             self.lock_remote = getattr(self.parent, lock_name)
             self.pid_remote = getattr(self.parent, pid_name)
             self.pid = multiprocessing.current_process().pid
+            self.lock_error_timestamp = None
             try:
                 self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
             except NameError as e:
@@ -150,12 +156,18 @@ class UltraDict(collections.UserDict, dict):
                     # If nobody owns the lock, the pid should be zero
                     assert ipid == 0
                     self.pid_remote[:] = self.pid.to_bytes(4, 'little')
+
+                    self.lock_error_timestamp = None
                     return True
                 else:
                     # Oh no, already locked by someone else
                     # TODO: Busy wait? Timeout?
                     counter += 1
                     if counter > self.lock_counter_goal:
+                        if not self.lock_error_timestamp:
+                            self.lock_error_timestamp = time.monotonic()
+                            self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
+                            assert self.lock_error_pid > 0
                         raise self.parent.CannotAcquireLockException("Failed to acquire lock: ", counter)
 
 
@@ -197,6 +209,12 @@ class UltraDict(collections.UserDict, dict):
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
+        def steal(self):
+            with atomics.atomicview(buffer=self.pid_remote[0:4], atype=atomics.INT) as pid_atomic:
+                res = pid_atomic.cmpxchg_strong(expected=self.lock_error_pid, desired=self.pid)
+                print(res, res.success)
+
+
         def status(self):
             return {
                 'has_lock': self.has_lock,
@@ -205,9 +223,11 @@ class UltraDict(collections.UserDict, dict):
                 'pid_remote': int.from_bytes(self.pid_remote, 'little'),
             }
 
-        def print_status(self):
+        def print_status(self, status=None):
             import pprint
-            pprint.pprint(self.status())
+            if not status:
+                status = self.status()
+            pprint.pprint(status)
 
         def cleanup(self):
             if hasattr(self, 'ctx'):
@@ -225,7 +245,7 @@ class UltraDict(collections.UserDict, dict):
             return int.from_bytes(self.lock_remote, 'little')
 
         def __repr__(self):
-            return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={self.lock_remote!r}, has_lock={self.has_lock}, pid={self.pid})"
+            return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={int.from_bytes(self.lock_remote, 'little')}, has_lock={self.has_lock}, pid={self.pid}), pid_remote={int.from_bytes(self.pid_remote, 'little')}"
 
         def __enter__(self):
             self.acquire()
@@ -410,16 +430,16 @@ class UltraDict(collections.UserDict, dict):
     def dump(self):
         """ Dump the full dict into shared memory """
 
-        old = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
-        old_full_dump_memory = None
-
         with self.lock:
+            old = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+            old_full_dump_memory = None
+
             self.apply_update()
+
             if old:
                 old_full_dump_memory = self.get_memory(create=False, name=old)
             marshalled = self.serializer.dumps(self.data)
             length = len(marshalled)
-            #log.info("Dumped dict with {} elements to {} bytes", len(self), len(marshalled))
 
             # If we don't have a fixed size, let's create full dump memory dynamically
             # TODO: This causes issues on Windows because the memory is not persistant
@@ -429,7 +449,6 @@ class UltraDict(collections.UserDict, dict):
             else:
                 # Dynamic full dump memory
                 full_dump_memory = self.get_memory(create=True, size=length + 6)
-                self.full_dump_memory_name_remote[:] = full_dump_memory.name.encode('utf-8').ljust(255)
 
             # On Windows, we need to keep a reference to the full dump memory,
             # otherwise it's destoryed
@@ -443,11 +462,11 @@ class UltraDict(collections.UserDict, dict):
 
             # Write header, 6 bytes
             # First byte is null byte
-            full_dump_memory.buf[0:1] = b'\x00'
+            full_dump_memory.buf[0:1] = b'\xFF'
             # Then comes 4 bytes of length of the body
             full_dump_memory.buf[1:5] = length.to_bytes(4, 'little')
             # Then another null bytes, end of header
-            full_dump_memory.buf[5:6] = b'\x00'
+            full_dump_memory.buf[5:6] = b'\xFF'
 
             # Write body
             full_dump_memory.buf[6:6+length] = marshalled
@@ -456,13 +475,25 @@ class UltraDict(collections.UserDict, dict):
             if not self.full_dump_size and sys.platform != 'win32':
                 full_dump_memory.close()
 
+            # TODO: There's a slight chance of something going wrong when we first update
+            #       the remote memory name and then the counter.
+
+            # Only after we have filled the new full dump memory with the marshalled data,
+            # we update the remote name so other users can find it
+            if not (self.full_dump_size and self.full_dump_memory):
+                self.full_dump_memory_name_remote[:] = full_dump_memory.name.encode('utf-8').ljust(255)
+
             self.full_dump_counter += 1
             current = int.from_bytes(self.full_dump_counter_remote, 'little')
+            # Now also increment the remote counter
             self.full_dump_counter_remote[:] = int(current + 1).to_bytes(4, 'little')
-            # Reset the update_counter to zero as we have
+
+            # Reset the stream position to zero as we have
             # just provided a fresh new full dump
             self.update_stream_position = 0
             self.update_stream_position_remote[:] = b'\x00\x00\x00\x00'
+
+            log.info("Dumped dict with {} elements to {} bytes, remote_counter={}", len(self), len(marshalled), current+1)
 
             # If the old full dump memory was dynamically created, delete it
             if old and old != full_dump_memory.name and not self.full_dump_size:
@@ -470,38 +501,71 @@ class UltraDict(collections.UserDict, dict):
 
             return full_dump_memory
 
+    def get_full_dump_memory(self, max_retry=3, retry=0):
+        """
+        Attach to the full dump memory.
+
+        Retry if necessary for a low number of times. It could happen that the full
+        dump memory was removed because a new full dump was created before we had the
+        chance to read the old full dump.
+
+        """
+        try:
+            name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+            #log.debug("Full dump name={}", name)
+            assert len(name) >= 1
+            return self.get_memory(create=False, name=name)
+        except UltraDict.CannotAttachSharedMemoryException as e:
+            if retry < max_retry:
+                return self.get_full_dump_memory(max_retry=max_retry, retry=retry+1)
+            elif retry == max_retry:
+                # On the last retry, let's use a lock to ensure we can safely import the dump
+                with self.lock:
+                    return self.get_full_dump_memory(max_retry=max_retry, retry=retry+1)
+            else:
+                raise e
+
     #@profile
     def load(self, force=False):
+        """
+        Opportunistacally load full dumps without any locking.
+
+        There is a rare case where a full dump is replaced with a newer full dump while
+        we didn't have the chance to load the old one. In this case, we just retry.
+        """
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
         if force or (self.full_dump_counter < full_dump_counter):
             if self.full_dump_size and self.full_dump_memory:
                 full_dump_memory = self.full_dump_memory
             else:
-                name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
-                assert len(name) >= 1
-                full_dump_memory = self.get_memory(create=False, name=name)
+                # Retry if necessary
+                full_dump_memory = self.get_full_dump_memory()
+
             buf = full_dump_memory.buf
-            assert buf
             pos = 0
+
             # Read header
             # The first byte should be a null byte to introduce the header
-            assert bytes(buf[pos:pos+1]) == b'\x00'
+            assert bytes(buf[pos:pos+1]) == b'\xFF'
             pos += 1
             # Then comes 4 bytes of length
             length = int.from_bytes(bytes(buf[pos:pos+4]), 'little')
+            assert length > 0, (self.status(), full_dump_memory, bytes(buf[:]).decode('utf-8').strip().strip('\x00'), len(buf))
             pos += 4
             #log.debug("Found update, pos={} length={}", pos, length)
-            assert bytes(buf[pos:pos+1]) == b'\x00'
+            assert bytes(buf[pos:pos+1]) == b'\xFF'
             pos += 1
             # Unserialize the update data, we expect a tuple of key and value
             full_dump = self.serializer.loads(bytes(buf[pos:pos+length]))
             #log.debug("Got full dump: ", full_dump)
 
+            # TODO: Can we not just assign self.data = full_dump?
             self.data.clear()
             self.data.update(full_dump)
             self.full_dump_counter = full_dump_counter
             self.update_stream_position = 0
+
             if sys.platform != 'win32' and not self.full_dump_memory:
                 full_dump_memory.close()
         else:
@@ -511,71 +575,98 @@ class UltraDict(collections.UserDict, dict):
     def append_update(self, key, item, delete=False):
         """ Append dict changes to shared memory stream """
 
-        # Must own a lock before running this function
-
         # If mode is 0, it means delete the key from the dict
         # If mode is 1, it means update the key
         mode = not delete
         marshalled = self.serializer.dumps((mode, key, item))
         length = len(marshalled)
 
-        start_position = int.from_bytes(self.update_stream_position_remote, 'little')
-        # 6 bytes for the header
-        end_position = start_position + length + 6
-        #log.debug("pos: ", start_position, end_position, self.buffer_size)
-        if end_position > self.buffer_size:
-            #log.debug("buffer is full")
+        with self.lock:
+            start_position = int.from_bytes(self.update_stream_position_remote, 'little')
+            # 6 bytes for the header
+            end_position = start_position + length + 6
+            #log.debug("pos: ", start_position, end_position, self.buffer_size)
+            if end_position > self.buffer_size:
+                #log.debug("buffer is full")
 
-            # todo: is is necessary? apply_update() is also done inside dump()
-            self.apply_update()
-            self.data.__setitem__(key, item)
-            self.dump()
-            return
+                # todo: is is necessary? apply_update() is also done inside dump()
+                self.apply_update()
+                self.data.__setitem__(key, item)
+                self.dump()
+                return
 
-        marshalled = b'\x00' + length.to_bytes(4, 'little') + b'\x00' + marshalled
+            marshalled = b'\xFF' + length.to_bytes(4, 'little') + b'\xFF' + marshalled
 
-        # Write body with the real data
-        self.buffer.buf[start_position:end_position] = marshalled
+            # Write body with the real data
+            self.buffer.buf[start_position:end_position] = marshalled
 
-        # Inform others about it
-        self.update_stream_position = end_position
-        self.update_stream_position_remote[:] = end_position.to_bytes(4, 'little')
-        #log.debug("Update counter increment from {} by {} to {}", start_position, len(marshalled), end_position)
+            # Inform others about it
+            self.update_stream_position = end_position
+            self.update_stream_position_remote[:] = end_position.to_bytes(4, 'little')
+            #log.debug("Update counter increment from {} by {} to {}", start_position, len(marshalled), end_position)
 
     #@profile
     def apply_update(self):
-        """ Apply dict changes from shared memory stream """
+        """ Opportunisticlaly apply dict changes from shared memory stream without any locking.  """
 
         if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
             self.load(force=True)
 
         if self.update_stream_position < int.from_bytes(self.update_stream_position_remote, 'little'):
+
             # Our own position in the update stream
             pos = self.update_stream_position
-            #log.debug("Apply update: stream position own={} remote={}", pos, int.from_bytes(self.update_stream_position_remote, 'little'))
-            # Iterate over all updates until the start of the last update
+            #log.debug("Apply update: stream position own={} remote={} full_dump_counter={}", pos, int.from_bytes(self.update_stream_position_remote, 'little'), self.full_dump_counter)
 
-            while pos < int.from_bytes(self.update_stream_position_remote, 'little'):
-                # Read header
-                # The first byte should be a null byte to introduce the header
-                assert bytes(self.buffer.buf[pos:pos+1]) == b'\x00'
-                pos += 1
-                # Then comes 4 bytes of length
-                length = int.from_bytes(bytes(self.buffer.buf[pos:pos+4]), 'little')
-                pos += 4
-                #log.debug("Found update, pos={} length={}", pos, length)
-                assert bytes(self.buffer.buf[pos:pos+1]) == b'\x00'
-                pos += 1
-                # Unserialize the update data, we expect a tuple of key and value
-                mode, key, value = self.serializer.loads(bytes(self.buffer.buf[pos:pos+length]))
-                # Update or local dict cache (in our parent)
-                if mode:
-                    self.data.__setitem__(key, value)
-                else:
-                    self.data.__delitem__(key)
-                pos += length
-                # Remember that we have applied the update
-                self.update_stream_position = pos
+            try:
+                # Iterate over all updates until the start of the last update
+                while pos < int.from_bytes(self.update_stream_position_remote, 'little'):
+                    # Read header
+                    # The first byte should be a null byte to introduce the headerfull_dump_counter_remote
+                    assert bytes(self.buffer.buf[pos:pos+1]) == b'\xFF'
+                    pos += 1
+                    # Then comes 4 bytes of length
+                    length = int.from_bytes(bytes(self.buffer.buf[pos:pos+4]), 'little')
+                    pos += 4
+                    #log.debug("Found update, update_stream_position={} length={}", self.update_stream_position, length + 6)
+                    assert bytes(self.buffer.buf[pos:pos+1]) == b'\xFF'
+                    pos += 1
+                    # Unserialize the update data, we expect a tuple of key and value
+                    mode, key, value = self.serializer.loads(bytes(self.buffer.buf[pos:pos+length]))
+                    # Update or local dict cache (in our parent)
+                    if mode:
+                        self.data.__setitem__(key, value)
+                    else:
+                        self.data.__delitem__(key)
+                    pos += length
+                    # Remember that we have applied the update
+                    self.update_stream_position = pos
+            except (AssertionError, pickle.UnpicklingError) as e:
+
+                # It can happen that a slow process is not fast enough reading the stream and some
+                # other process already got around overwriting the current position. It is possible to
+                # recover from this situation if and only if a new, fresh full dump exists that can be loaded.
+                if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
+                    log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
+                    return self.apply_update()
+
+                print("before: ", pos)
+                print(bytes(self.buffer.buf[:]))
+                self.print_status()
+
+                # As a last resort, let's get a lock. This way we are safe but slow.
+                with self.lock:
+                    print("lock: ", pos)
+                    print(bytes(self.buffer.buf[:]))
+                    self.print_status()
+                    if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
+                        log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
+                        return self.apply_update()
+                    print("after: ", pos)
+                    print(bytes(self.buffer.buf[:]))
+                    self.print_status()
+                log.exception(f'Exception {e}')
+                raise e
 
         return self.data
 
@@ -665,10 +756,12 @@ class UltraDict(collections.UserDict, dict):
 
         return ret
 
-    def print_status(self, stderr=False):
+    def print_status(self, status=None, stderr=False):
         """ Internal debug helper to pretty print the control state variables """
         import pprint
-        pprint.pprint(self.status(), stream=sys.stderr if stderr else sys.stdout)
+        if not status:
+            status = self.status()
+        pprint.pprint(status, stream=sys.stderr if stderr else sys.stdout)
 
     def cleanup(self):
         #log.debug('Cleanup')

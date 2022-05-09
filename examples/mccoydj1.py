@@ -1,5 +1,6 @@
 import sys
 sys.path.insert(0, '..')
+sys.path.insert(0, '../..')
 
 import multiprocessing
 from UltraDict import UltraDict
@@ -12,9 +13,7 @@ def P1():
     ultra = UltraDict(name=name)
 
     while True:
-        pass
         ultra['P1'] = random.random()
-        #ultra['P2']
 
 def P2():
     ultra = UltraDict(name=name)
@@ -22,7 +21,6 @@ def P2():
     while True:
         chars = "".join([random.choice(string.ascii_lowercase) for i in range(8)])
         ultra['P2'] = chars
-        #ultra['P1']
 
 if __name__ == '__main__':
 
@@ -31,7 +29,7 @@ if __name__ == '__main__':
 
     UltraDict.unlink_by_name(name, ignore_error=True)
 
-    ultra = UltraDict({'P1':float(0), 'P2':''}, name=name, buffer_size=10_000, shared_lock=True)
+    ultra = UltraDict({'P1':float(0), 'P2':''}, name=name, buffer_size=100, shared_lock=True)
 
     p1 = multiprocessing.Process(target=P1)
     p1.start()
@@ -42,6 +40,7 @@ if __name__ == '__main__':
     import time
     while True:
         print(ultra)
+        #x = str(ultra)
 
     p1.join()
     p2.join()

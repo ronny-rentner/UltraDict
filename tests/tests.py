@@ -2,6 +2,8 @@ import unittest
 import subprocess
 import sys
 
+sys.path.insert(0, '..')
+
 from UltraDict import UltraDict
 
 class TestUltradict(unittest.TestCase):
