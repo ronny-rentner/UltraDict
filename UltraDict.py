@@ -111,6 +111,11 @@ class UltraDict(collections.UserDict, dict):
             self.lock_remote = getattr(self.parent, lock_name)
             self.pid_remote = getattr(self.parent, pid_name)
             self.pid = multiprocessing.current_process().pid
+            # When we fail to acquire a lock, we store the pid of the process that
+            # currently holds the lock
+            self.lock_error_pid = 0
+            # When we fail to acquire a lock, we store a timestamp to know how long
+            # we have failed to acquire a lock
             self.lock_error_timestamp = None
             try:
                 self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
@@ -164,10 +169,11 @@ class UltraDict(collections.UserDict, dict):
                     # TODO: Busy wait? Timeout?
                     counter += 1
                     if counter > self.lock_counter_goal:
-                        if not self.lock_error_timestamp:
-                            self.lock_error_timestamp = time.monotonic()
-                            self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
-                            assert self.lock_error_pid > 0
+                        # TODO: Record timestamp when starting to wait
+                        #if not self.lock_error_timestamp:
+                        #    self.lock_error_timestamp = time.monotonic()
+                        #    self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
+                        #    assert self.lock_error_pid > 0
                         raise self.parent.CannotAcquireLockException("Failed to acquire lock: ", counter)
 
 
