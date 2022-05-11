@@ -1,5 +1,8 @@
 #
-# N processes incrementing a counter in parallel
+# This example uses a configurable amount of worker processes to jointly increment a counter.
+#
+# A crash is simulated in one of the processes while it currently holds the shared lock.
+# A strategy for recovery with a timeout is demonstrated.
 #
 
 import sys, os
@@ -20,17 +23,18 @@ number_of_processes = 5
 simulate_crash_at_count = 10
 
 def simulate_crash(d):
-
-        # Simulate random crash in one of the processes.
-        # This will cause the lock to be stale and not released.
-        if d['counter'] == simulate_crash_at_count:
-            process = multiprocessing.process.current_process()
-            print(f"Simulating crash, kill process name={process.name}, pid={process.pid}, lock={d.lock}")
-            # SIGKILL is a hard kill on kernel level leaving the process
-            # no time for any cleanup whatsoever
-            os.kill(process.pid, signal.SIGKILL)
-            # This message should never print
-            print("Killed")
+    """
+    Simulate random crash in one of the worker processes.
+    This will cause the lock to be stale and not released.
+    """
+    if d['counter'] == simulate_crash_at_count:
+        process = multiprocessing.process.current_process()
+        print(f"Simulating crash, kill process name={process.name}, pid={process.pid}, lock={d.lock}")
+        # SIGKILL is a hard kill on kernel level leaving the process
+        # no time for any cleanup whatsoever
+        os.kill(process.pid, signal.SIGKILL)
+        # This message should never print
+        print("Killed")
 
 def run(d, target):
     process = multiprocessing.process.current_process()
@@ -96,7 +100,7 @@ def run(d, target):
 
                 # Steal the stale lock
                 print(f"Process {multiprocessing.current_process().pid} is resetting lock from {pid}")
-                d.lock.reset()
+                d.lock.steal()
             else:
                 print(f'{process.name} cannot acquire lock, will try again, {time_passed:.3f} s have passed')
 

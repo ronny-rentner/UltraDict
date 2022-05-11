@@ -205,15 +205,19 @@ class UltraDict(collections.UserDict, dict):
 
         def reset(self):
             # Risky
-            self.lock_remote[:] = b'\x00\x00'
+            self.lock_remote[:] = b'\x00'
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
-        def steal(self):
-            with atomics.atomicview(buffer=self.pid_remote[0:4], atype=atomics.INT) as pid_atomic:
-                res = pid_atomic.cmpxchg_strong(expected=self.lock_error_pid, desired=self.pid)
-                print(res, res.success)
+        def steal(self, from_pid=0):
+            if self.has_lock:
+                raise Exception("Cannot reset lock if we have acquired it. Use release() to release the lock")
 
+            # TODO: Add protection to only steal from the right pid
+            self.pid_remote[:] = b'\x00\x00\x00\x00'
+            result = self.lock_atomic.cmpxchg_strong(expected=b'\x01', desired=b'\x00')
+
+            return result.success
 
         def status(self):
             return {
@@ -461,11 +465,11 @@ class UltraDict(collections.UserDict, dict):
                     f'Full dump memory too small for full dump: needed={length + 6} got={full_dump_memory.size}')
 
             # Write header, 6 bytes
-            # First byte is null byte
+            # First byte is FF byte
             full_dump_memory.buf[0:1] = b'\xFF'
             # Then comes 4 bytes of length of the body
             full_dump_memory.buf[1:5] = length.to_bytes(4, 'little')
-            # Then another null bytes, end of header
+            # Then another FF bytes, end of header
             full_dump_memory.buf[5:6] = b'\xFF'
 
             # Write body
@@ -535,41 +539,51 @@ class UltraDict(collections.UserDict, dict):
         """
         full_dump_counter = int.from_bytes(self.full_dump_counter_remote, 'little')
         #log.debug("Loading full dump local_counter={} remote_counter={}", self.full_dump_counter, full_dump_counter)
-        if force or (self.full_dump_counter < full_dump_counter):
-            if self.full_dump_size and self.full_dump_memory:
-                full_dump_memory = self.full_dump_memory
+        try:
+            if force or (self.full_dump_counter < full_dump_counter):
+                if self.full_dump_size and self.full_dump_memory:
+                    full_dump_memory = self.full_dump_memory
+                else:
+                    # Retry if necessary
+                    full_dump_memory = self.get_full_dump_memory()
+
+                buf = full_dump_memory.buf
+                pos = 0
+
+                # Read header
+                # The first byte should be a FF byte to introduce the header
+                assert bytes(buf[pos:pos+1]) == b'\xFF'
+                pos += 1
+                # Then comes 4 bytes of length
+                length = int.from_bytes(bytes(buf[pos:pos+4]), 'little')
+                assert length > 0, (self.status(), full_dump_memory, bytes(buf[:]).decode('utf-8').strip().strip('\x00'), len(buf))
+                pos += 4
+                #log.debug("Found update, pos={} length={}", pos, length)
+                assert bytes(buf[pos:pos+1]) == b'\xFF'
+                pos += 1
+                # Unserialize the update data, we expect a tuple of key and value
+                full_dump = self.serializer.loads(bytes(buf[pos:pos+length]))
+                #log.debug("Got full dump: ", full_dump)
+
+                # TODO: Can we not just assign self.data = full_dump?
+                self.data.clear()
+                self.data.update(full_dump)
+                self.full_dump_counter = full_dump_counter
+                self.update_stream_position = 0
+
+                if sys.platform != 'win32' and not self.full_dump_memory:
+                    full_dump_memory.close()
             else:
-                # Retry if necessary
-                full_dump_memory = self.get_full_dump_memory()
-
-            buf = full_dump_memory.buf
-            pos = 0
-
-            # Read header
-            # The first byte should be a null byte to introduce the header
-            assert bytes(buf[pos:pos+1]) == b'\xFF'
-            pos += 1
-            # Then comes 4 bytes of length
-            length = int.from_bytes(bytes(buf[pos:pos+4]), 'little')
-            assert length > 0, (self.status(), full_dump_memory, bytes(buf[:]).decode('utf-8').strip().strip('\x00'), len(buf))
-            pos += 4
-            #log.debug("Found update, pos={} length={}", pos, length)
-            assert bytes(buf[pos:pos+1]) == b'\xFF'
-            pos += 1
-            # Unserialize the update data, we expect a tuple of key and value
-            full_dump = self.serializer.loads(bytes(buf[pos:pos+length]))
-            #log.debug("Got full dump: ", full_dump)
-
-            # TODO: Can we not just assign self.data = full_dump?
-            self.data.clear()
-            self.data.update(full_dump)
-            self.full_dump_counter = full_dump_counter
-            self.update_stream_position = 0
-
-            if sys.platform != 'win32' and not self.full_dump_memory:
-                full_dump_memory.close()
-        else:
-            raise Exception("Cannot load full dump, no new data available")
+                raise Exception("Cannot load full dump, no new data available")
+        except AssertionError as e:
+            full_dump_delta = int.from_bytes(self.full_dump_counter_remote, 'little') - self.full_dump_counter
+            if full_dump_delta > 1:
+                # If more than one new full dump was created during the time we were trying to load one full dump
+                # it can happen that our full dump has just disappeared
+                return self.load(force=True)
+            # TODO: Before we reach max recursion depth, try to load the full dump using a lock
+            self.print_status()
+            raise e
 
     #@profile
     def append_update(self, key, item, delete=False):
@@ -622,7 +636,7 @@ class UltraDict(collections.UserDict, dict):
                 # Iterate over all updates until the start of the last update
                 while pos < int.from_bytes(self.update_stream_position_remote, 'little'):
                     # Read header
-                    # The first byte should be a null byte to introduce the headerfull_dump_counter_remote
+                    # The first byte should be a FF byte to introduce the headerfull_dump_counter_remote
                     assert bytes(self.buffer.buf[pos:pos+1]) == b'\xFF'
                     pos += 1
                     # Then comes 4 bytes of length
