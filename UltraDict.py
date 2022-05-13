@@ -281,7 +281,7 @@ class UltraDict(collections.UserDict, dict):
         'full_dump_memory_name_remote', \
         'data', 'recurse'
 
-    def __init__(self, *args, name=None, buffer_size=10000, serializer=pickle, shared_lock=None, full_dump_size=None,
+    def __init__(self, *args, name=None, buffer_size=10_000, serializer=pickle, shared_lock=None, full_dump_size=None,
             auto_unlink=True, recurse=None, **kwargs):
 
         # On win32, only multiples of 4k are allowed
@@ -291,6 +291,9 @@ class UltraDict(collections.UserDict, dict):
                 full_dump_size = -(full_dump_size // -4096) * 4096
 
         assert buffer_size < 2**32
+
+        if recurse:
+            assert serializer == pickle
 
         # Local position, ie. the last position we have processed from the stream
         self.update_stream_position  = 0
@@ -721,7 +724,9 @@ class UltraDict(collections.UserDict, dict):
 
             if self.recurse:
                 if type(item) == dict:
-                    item = UltraDict(item, recurse=True)
+                    # TODO: Use parent's buffer with a namespace prefix
+                    item = UltraDict(item, recurse=True, shared_lock=self.shared_lock, buffer_size=self.buffer_size,
+                                     full_dump_size=self.full_dump_size)
 
             # Update our local copy
             # It's important for the integrity to do this first
