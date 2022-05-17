@@ -204,7 +204,7 @@ class UltraDict(collections.UserDict, dict):
                 if not self.has_lock:
                     self.pid_remote[:] = b'\x00\x00\x00\x00'
                     self.test_and_dec()
-                #log.debug("After release: ", self.has_lock, int.from_bytes(pid, 'little'))
+                #log.debug("After release: ", self.has_lock, int.from_bytes(self.pid_remote, 'little'))
                 return True
 
             return False
@@ -462,10 +462,6 @@ class UltraDict(collections.UserDict, dict):
                 # Dynamic full dump memory
                 full_dump_memory = self.get_memory(create=True, size=length + 6)
 
-            # On Windows, we need to keep a reference to the full dump memory,
-            # otherwise it's destoryed
-            self.full_dump_memory = full_dump_memory
-
             #log.debug("Full dump memory: ", full_dump_memory)
 
             if length + 6 > full_dump_memory.size:
@@ -510,6 +506,10 @@ class UltraDict(collections.UserDict, dict):
             # If the old full dump memory was dynamically created, delete it
             if old and old != full_dump_memory.name and not self.full_dump_size:
                 self.unlink_by_name(old)
+
+            # On Windows, we need to keep a reference to the full dump memory,
+            # otherwise it's destoryed
+            self.full_dump_memory = full_dump_memory
 
             return full_dump_memory
 
@@ -755,6 +755,10 @@ class UltraDict(collections.UserDict, dict):
         self.apply_update()
         return len(self.data)
 
+    def __iter__(self):
+        self.apply_update()
+        return iter(self.data)
+
     def __repr__(self):
         try:
             self.apply_update()
@@ -834,8 +838,8 @@ class UltraDict(collections.UserDict, dict):
     @staticmethod
     def unlink_by_name(name, ignore_error=False):
         try:
-            memory = UltraDict.get_memory(create=False, name=name)
             #log.debug("Unlinking memory '{}'", name)
+            memory = UltraDict.get_memory(create=False, name=name)
             memory.close()
             memory.unlink()
         except UltraDict.CannotAttachSharedMemoryException as e:

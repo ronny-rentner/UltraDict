@@ -14,7 +14,7 @@ jobs:
     name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
     runs-on: ${{ matrix.config.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         config:
           - name: "win32-x86"

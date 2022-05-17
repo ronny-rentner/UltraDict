@@ -57,6 +57,23 @@ class TestUltradict(unittest.TestCase):
 
         self.assertEqual(ultra.buffer_size, other.buffer_size)
 
+    def testIter(self):
+        ultra = UltraDict()
+        # Connect `other` dict to `ultra` dict via `name`
+        other = UltraDict(name=ultra.name)
+
+        ultra[1] = 1
+        ultra[2] = 2
+
+        counter = 0
+        for i in other.items():
+            counter += 1
+
+        self.assertEqual(counter, 2)
+
+        self.assertEqual(ultra.items(), other.items())
+
+
     def testFullDump(self):
         # TODO
         pass
