@@ -21,7 +21,7 @@
 __all__ = ['UltraDict']
 
 import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
-import atexit, collections, os, pickle, sys, time
+import atexit, collections, os, pickle, sys #, time
 
 #import sys
 #sys.path.insert(0, '..')
@@ -106,7 +106,7 @@ class UltraDict(collections.UserDict, dict):
             self.parent = parent
             self.has_lock = 0
             # `lock_name` contains the name of the attribute that the parent uses
-            # to store the memory view on the remote lock, so `self.lock_remote` is 
+            # to store the memory view on the remote lock, so `self.lock_remote` is
             # referring to a memory view
             self.lock_remote = getattr(self.parent, lock_name)
             self.pid_remote = getattr(self.parent, pid_name)
@@ -260,9 +260,10 @@ class UltraDict(collections.UserDict, dict):
         def __enter__(self):
             self.acquire()
             return self
-        
+
         def __exit__(self, type, value, traceback):
             self.release()
+            # Make sure exceptions are not ignored
             return False
 
         def __call__(self, block=True, timeout=0):
@@ -283,6 +284,7 @@ class UltraDict(collections.UserDict, dict):
 
     def __init__(self, *args, name=None, buffer_size=10_000, serializer=pickle, shared_lock=None, full_dump_size=None,
             auto_unlink=True, recurse=None, **kwargs):
+        # pylint: disable=too-many-branches, too-many-statements
 
         # On win32, only multiples of 4k are allowed
         if sys.platform == 'win32':
@@ -305,9 +307,9 @@ class UltraDict(collections.UserDict, dict):
         # Small 300 bytes of shared memory where we store the runtime state
         # of our update stream
         self.control = self.get_memory(create=True, name=name, size=1000)
+        self.name = self.control.name
 
         self.init_remotes()
-        self.name = self.control.name
 
         self.serializer = serializer
 
@@ -445,12 +447,9 @@ class UltraDict(collections.UserDict, dict):
 
         with self.lock:
             old = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
-            old_full_dump_memory = None
 
             self.apply_update()
 
-            if old:
-                old_full_dump_memory = self.get_memory(create=False, name=old)
             marshalled = self.serializer.dumps(self.data)
             length = len(marshalled)
 
@@ -688,7 +687,6 @@ class UltraDict(collections.UserDict, dict):
                     #print("after: ", pos)
                     #print(bytes(self.buffer.buf[:]))
                     #self.print_status()
-                log.exception(f'Exception {e}')
                 raise e
 
         return self.data
