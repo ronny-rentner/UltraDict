@@ -21,7 +21,7 @@
 __all__ = ['UltraDict']
 
 import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
-import atexit, collections, os, pickle, sys #, time
+import atexit, collections, os, pickle, sys, weakref #, time
 
 #import sys
 #sys.path.insert(0, '..')
@@ -64,19 +64,23 @@ def remove_shm_from_resource_tracker():
 remove_shm_from_resource_tracker()
 
 
+class CannotAttachSharedMemoryException(Exception):
+    pass
+
+class CannotAcquireLockException(Exception):
+    pass
+
 class UltraDict(collections.UserDict, dict):
 
     class AlreadyClosedException(Exception):
         pass
 
-    class CannotAcquireLockException(Exception):
-        pass
+    CannotAcquireLockException = CannotAcquireLockException
 
     class FullDumpMemoryFullException(Exception):
         pass
 
-    class CannotAttachSharedMemoryException(Exception):
-        pass
+    CannotAttachSharedMemoryException = CannotAttachSharedMemoryException
 
     class ParameterMismatchException(Exception):
         pass
@@ -103,13 +107,12 @@ class UltraDict(collections.UserDict, dict):
         lock_counter_goal = 10_000
 
         def __init__(self, parent, lock_name, pid_name):
-            self.parent = parent
             self.has_lock = 0
             # `lock_name` contains the name of the attribute that the parent uses
             # to store the memory view on the remote lock, so `self.lock_remote` is
             # referring to a memory view
-            self.lock_remote = getattr(self.parent, lock_name)
-            self.pid_remote = getattr(self.parent, pid_name)
+            self.lock_remote = getattr(parent, lock_name)
+            self.pid_remote = getattr(parent, pid_name)
             self.pid = multiprocessing.current_process().pid
             # When we fail to acquire a lock, we store the pid of the process that
             # currently holds the lock
@@ -174,7 +177,7 @@ class UltraDict(collections.UserDict, dict):
                         #    self.lock_error_timestamp = time.monotonic()
                         #    self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
                         #    assert self.lock_error_pid > 0
-                        raise self.parent.CannotAcquireLockException("Failed to acquire lock: ", counter)
+                        raise self.CannotAcquireLockException("Failed to acquire lock: ", counter)
 
 
         #@profile
@@ -194,7 +197,7 @@ class UltraDict(collections.UserDict, dict):
 
         #@profile
         def release(self, *args):
-            #log.debug("Release lock", self.has_lock)
+            #log.debug("Release lock, lock={}", self.has_lock)
             if self.has_lock > 0:
                 owner = int.from_bytes(self.pid_remote, 'little')
                 if owner != self.pid:
@@ -204,7 +207,7 @@ class UltraDict(collections.UserDict, dict):
                 if not self.has_lock:
                     self.pid_remote[:] = b'\x00\x00\x00\x00'
                     self.test_and_dec()
-                #log.debug("After release: ", self.has_lock, int.from_bytes(self.pid_remote, 'little'))
+                #log.debug("Relased lock, lock={} pid_remote={}", self.has_lock, int.from_bytes(self.pid_remote, 'little'))
                 return True
 
             return False
@@ -280,10 +283,11 @@ class UltraDict(collections.UserDict, dict):
         'shared_lock_remote', \
         'recurse_remote', \
         'full_dump_memory_name_remote', \
-        'data', 'recurse'
+        'data', 'recurse', 'closed', \
+        'auto_unlink'
 
     def __init__(self, *args, name=None, buffer_size=10_000, serializer=pickle, shared_lock=None, full_dump_size=None,
-            auto_unlink=True, recurse=None, **kwargs):
+            auto_unlink=False, recurse=None, **kwargs):
         # pylint: disable=too-many-branches, too-many-statements
 
         # On win32, only multiples of 4k are allowed
@@ -303,6 +307,9 @@ class UltraDict(collections.UserDict, dict):
         # Local version counter for the full dumps, ie. if we find a higher version
         # remote, we need to load a full dump
         self.full_dump_counter       = 0
+
+        self.closed = False
+        self.auto_unlink = auto_unlink
 
         # Small 300 bytes of shared memory where we store the runtime state
         # of our update stream
@@ -374,15 +381,32 @@ class UltraDict(collections.UserDict, dict):
         self.recurse = recurse
         self.shared_lock = shared_lock
 
+
         super().__init__(*args, **kwargs)
+
+        def finalize(weak_self, name):
+            #log.debug('Finalize', name)
+            resolved_self = weak_self()
+            if resolved_self is not None:
+                #log.debug('Weakref is intact, unlinking')
+                resolved_self.close(from_finalizer=True)
+            #log.debug('Finalized')
+
+        self.finalizer = weakref.finalize(self, finalize, weakref.ref(self), self.name)
 
         # Load all data from shared memory
         self.apply_update()
 
-        if auto_unlink:
-            atexit.register(self.unlink)
-        else:
-            atexit.register(self.cleanup)
+        #if auto_unlink:
+        #    atexit.register(self.unlink)
+        #else:
+        #    atexit.register(self.cleanup)
+
+        #log.debug("Initialized", self.name)
+
+    def __del__(self):
+        #log.debug("__del__", self.name)
+        self.close()
 
     def init_remotes(self):
         # Memoryviews to the right buffer position in self.control
@@ -408,7 +432,7 @@ class UltraDict(collections.UserDict, dict):
 
     def __reduce__(self):
         from functools import partial
-        return (partial(self.__class__, name=self.name), ())
+        return (partial(self.__class__, name=self.name, auto_unlink=self.auto_unlink), ())
 
     @staticmethod
     def get_memory(*, create=True, name=None, size=0):
@@ -501,7 +525,7 @@ class UltraDict(collections.UserDict, dict):
             self.update_stream_position = 0
             self.update_stream_position_remote[:] = b'\x00\x00\x00\x00'
 
-            log.info("Dumped dict with {} elements to {} bytes, remote_counter={}", len(self), len(marshalled), current+1)
+            #log.info("Dumped dict with {} elements to {} bytes, remote_counter={}", len(self), len(marshalled), current+1)
 
             # If the old full dump memory was dynamically created, delete it
             if old and old != full_dump_memory.name and not self.full_dump_size:
@@ -574,8 +598,9 @@ class UltraDict(collections.UserDict, dict):
                 #log.debug("Got full dump: ", full_dump)
 
                 # TODO: Can we not just assign self.data = full_dump?
-                self.data.clear()
-                self.data.update(full_dump)
+                #self.data.clear()
+                #self.data.update(full_dump)
+                self.data = full_dump
                 self.full_dump_counter = full_dump_counter
                 self.update_stream_position = 0
 
@@ -737,7 +762,6 @@ class UltraDict(collections.UserDict, dict):
     def __getitem__(self, key):
         #log.debug("__getitem__ {}", key)
         self.apply_update()
-        #log.debug("__getitem__ =>", self.data[key])
         return self.data[key]
 
     def has_key(self, key):
@@ -793,25 +817,32 @@ class UltraDict(collections.UserDict, dict):
     def cleanup(self):
         #log.debug('Cleanup')
 
+        #for item in self.data.items():
+        #    print(type(item))
+
         if hasattr(self, 'lock') and hasattr(self.lock, 'cleanup'):
             self.lock.cleanup()
 
+        # If we use RLock(), this closes the file handle
+        del self.lock
+        del self.full_dump_memory
+
         self.del_remotes()
 
-        #del self.name
+        del self.data
 
-        self.control.close()
-        self.buffer.close()
+        #self.control.close()
+        #self.buffer.close()
 
-        if self.full_dump_memory:
-            self.full_dump_memory.close()
+        #if self.full_dump_memory:
+        #    self.full_dump_memory.close()
 
         # No further cleanup on Windows, it will break everything
         #if sys.platform == 'win32':
         #    return
 
         #Only do cleanup once
-        atexit.unregister(self.cleanup)
+        #atexit.unregister(self.cleanup)
 
         # After closing the UltraDict, you will have to use `self.data` to access the data
         self.apply_update = self.raise_already_closed
@@ -824,24 +855,43 @@ class UltraDict(collections.UserDict, dict):
         self.apply_update()
         return self.data.keys()
 
-    def unlink(self, force=False):
-        full_dump_name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
+    def values(self):
+        self.apply_update()
+        return self.data.values()
 
+    def close(self, force=False, from_finalizer=False):
+        #log.debug('Close', self.name)
+
+        if self.closed:
+            #log.debug('Already closed, doing nothing')
+            return
+        self.closed = True
+
+        self.finalizer.detach()
+
+        full_dump_name = bytes(self.full_dump_memory_name_remote).decode('utf-8').strip().strip('\x00')
         self.cleanup()
 
-        if force or hasattr(self.control, 'created_by_ultra'):
+        # If we are the master creator of the shared memory, we'll delete (unlink) it
+        # including the full dump memory; for the full dump memory, we delete it even
+        # if we are not the creator
+        if self.auto_unlink and (force or hasattr(self.control, 'created_by_ultra')):
+            #log.debug('Unlink', self.name)
             self.control.unlink()
             self.buffer.unlink()
             if full_dump_name:
                 self.unlink_by_name(full_dump_name, ignore_error=True)
+
+        self.control.close()
+        self.buffer.close()
 
     @staticmethod
     def unlink_by_name(name, ignore_error=False):
         try:
             #log.debug("Unlinking memory '{}'", name)
             memory = UltraDict.get_memory(create=False, name=name)
-            memory.close()
             memory.unlink()
+            memory.close()
         except UltraDict.CannotAttachSharedMemoryException as e:
             if not ignore_error:
                 raise e

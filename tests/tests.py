@@ -78,6 +78,10 @@ class TestUltradict(unittest.TestCase):
         # TODO
         pass
 
+    def testCleanup(self):
+        # TODO
+        pass
+
     def testExampleSimple(self):
         filename = "examples/simple.py"
         ret = self.exec(filename)
