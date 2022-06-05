@@ -21,7 +21,8 @@
 __all__ = ['UltraDict']
 
 import multiprocessing, multiprocessing.shared_memory, multiprocessing.synchronize
-import collections, os, pickle, sys, weakref, pathlib, importlib #, time
+import collections, os, pickle, sys, weakref, pathlib
+import importlib.util, importlib.machinery
 
 try:
     # Needed for the shared locked
@@ -34,8 +35,8 @@ def import_file(file_path):
     file_path = pathlib.Path(__file__).parent / file_path
 
     def fix_name(file_path):
-        name = str(file_path.name).removesuffix('.py')
-        return name.replace('-', '_').replace('.', '_')
+        name = file_path.name[:-3] if file_path.name.endswith('.py') else file_path.name
+        return str(name).replace('-', '_').replace('.', '_')
 
     if not file_path.exists():
         raise ImportError(f"{file_path} does not exist")
