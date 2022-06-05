@@ -34,8 +34,8 @@ def import_file(file_path):
     file_path = pathlib.Path(__file__).parent / file_path
 
     def fix_name(file_path):
-        name = file_path.name.removesuffix('.py')
-        return str(name).replace('-', '_').replace('.', '_')
+        name = str(file_path.name).removesuffix('.py')
+        return name.replace('-', '_').replace('.', '_')
 
     if not file_path.exists():
         raise ImportError(f"{file_path} does not exist")
