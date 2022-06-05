@@ -66,7 +66,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # Manually install psutils as long as we don't build the wheels
-          pip install psutils
+          pip install psutil
           # Manually install pylint as long as we don't build the wheels
           #pip install pylint
       - name: Run unit tests
