@@ -1,5 +1,5 @@
 [build-system]
-requires        = ["setuptools", "wheel", "cython", "pylint"]
+requires        = ["setuptools", "wheel", "cython", "pylint", "psutil"]
 build-backend   = "setuptools.build_meta"
 
 [tool.pylint.'MESSAGES CONTROL']
