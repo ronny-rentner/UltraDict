@@ -211,10 +211,34 @@ dict.
 
 ## Memory management
 
-`UltraDict` uses shared memory buffers and those usually live is RAM. As `UltraDict` does not use any management processes to keep track of buffers it cannot know when to free those shared memory buffers again.
+`UltraDict` uses shared memory buffers and those usually live is RAM. `UltraDict` does not use any management processes to keep track of buffers.  Also it cannot know when to free those shared memory buffers again because you might want the buffers to outlive the process that has created them.
 
-By convention you should set the parameter `auto_unlink` to True for exactly one of the processes that is using the `UltraDict`. When this process with
-the `auto_unlink=True` flag ends, it will try to unlink (free) all shared memory buffers.
+By convention you should set the parameter `auto_unlink` to True for exactly one of the processes that is using the `UltraDict`. The first process
+that is creating a certain `UltraDict` will automatically get the flag `auto_unlink=True` unless you explicitly set it to `False`.
+When this process with the `auto_unlink=True` flag ends, it will try to unlink (free) all shared memory buffers.
+
+A special case is the recursive mode using `recurse=True` parameter. This mode will use an additional internal `UltraDict` to keep
+track of recursively nested `UltraDict` instances. All child `UltraDicts` will write to this register the names of the shared memory buffers
+they are creating. This allows the buffers to outlive the processes and still being correctly cleanup up by at the end of the program.
+
+**Buffer sizes and read performance:**
+
+There are 3 cases that can occur when you read from an `UltraDict:
+
+1. No new updates: This is the fastes cases. `UltraDict` was optimized for this case to find out as quickly as possible if there are no updates on the stream and then just return the desired data. If you want even better read perforamance you can directly access the underlying `data` attribute of your `UltraDict`, though at the cost of not getting real time updates anymore.
+
+2. Streaming update: This is usually fast, depending on the size and amount of that data that was changed but not depending on the size of the whole `UltraDict`. Only the data that was actually changed has to be unserialized.
+
+3. Full dump load: This can be slow, depending on the total size of your data. If your `UltraDict` is big it might take long to unserialize it.
+
+Given the above 3 cases, you need to balance the size of your data and your write patterns with the streaming `buffer_size` of your UltraDict. If the streaming buffer is full, a full dump has to be created. Thus, if your full dumps are expensive due to their size, try to find a good `buffer_size` to avoid creating too many full dumps.
+
+On the other hand, if for example you only change back and forth the value of one single key in your `UltraDict`, it might be useless to process a stream of all these back and forth changes. It might be much more efficient to simply do one full dump which might be very small because it only contains one key.
+
+
+
+
+
 
 ## Advanced usage
 
