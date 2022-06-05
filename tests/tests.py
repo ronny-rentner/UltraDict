@@ -2,9 +2,12 @@ import unittest
 import subprocess
 import sys
 
+
 sys.path.insert(0, '..')
 
 from UltraDict import UltraDict
+if hasattr(UltraDict.log, 'disable'):
+    UltraDict.log.disable(UltraDict.log.CRITICAL)
 
 class UltraDictTests(unittest.TestCase):
 
