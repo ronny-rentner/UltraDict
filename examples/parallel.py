@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     # No name provided to create a new dict with random name.
     # To make it work under Windows, we need to set a static `full_dump_size`
-    ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000, auto_unlink=False)
+    ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000)
     ultra['counter'] = 0
 
     # Our children will use the name to attach to the existing dict

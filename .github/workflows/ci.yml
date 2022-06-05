@@ -66,8 +66,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # Manually install pylint as long as we don't build the wheels
-          pip install pylint
+          #pip install pylint
       - name: Run unit tests
         run: python -m unittest
-      - name: Run pylint
-        run: pylint UltraDict.py
+          #- name: Run pylint
+          #run: pylint UltraDict.py

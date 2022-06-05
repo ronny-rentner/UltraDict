@@ -6,7 +6,7 @@ sys.path.insert(0, '..')
 
 from UltraDict import UltraDict
 
-class TestUltradict(unittest.TestCase):
+class UltraDictTests(unittest.TestCase):
 
     def setUp(self):
         pass
@@ -17,7 +17,7 @@ class TestUltradict(unittest.TestCase):
         ret.stdout = ret.stdout.replace(b'\r\n', b'\n');
         return ret
 
-    def testCount(self):
+    def test_count(self):
         ultra = UltraDict()
         other = UltraDict(name=ultra.name)
 
@@ -30,7 +30,7 @@ class TestUltradict(unittest.TestCase):
 
         self.assertEqual(len(ultra), len(other))
 
-    def testHugeValue(self):
+    def test_huge_value(self):
         ultra = UltraDict()
 
         # One megabyte string
@@ -47,7 +47,7 @@ class TestUltradict(unittest.TestCase):
 
         self.assertEqual(len(other.data['huge']), length)
 
-    def testParameterPassing(self):
+    def test_parameter_passing(self):
         ultra = UltraDict(shared_lock=True, buffer_size=4096*8, full_dump_size=4096*8)
         # Connect `other` dict to `ultra` dict via `name`
         other = UltraDict(name=ultra.name)
@@ -57,7 +57,7 @@ class TestUltradict(unittest.TestCase):
 
         self.assertEqual(ultra.buffer_size, other.buffer_size)
 
-    def testIter(self):
+    def test_iter(self):
         ultra = UltraDict()
         # Connect `other` dict to `ultra` dict via `name`
         other = UltraDict(name=ultra.name)
@@ -74,31 +74,52 @@ class TestUltradict(unittest.TestCase):
         self.assertEqual(ultra.items(), other.items())
 
 
-    def testFullDump(self):
+    def test_full_dump(self):
         # TODO
         pass
 
-    def testCleanup(self):
+    def test_cleanup(self):
         # TODO
-        pass
+        import psutil
+        p = psutil.Process()
+        file_count = len(p.open_files())
+        self.assertEqual(file_count, 0, "file handle count before before tests should be 0")
+        ultra = UltraDict(nested={ 1: 1})
+        file_count = len(p.open_files())
+        self.assertEqual(file_count, 4, "file handle count with one simple UltraDict should be 4")
+        del ultra
+        file_count = len(p.open_files())
+        self.assertEqual(file_count, 0, "file handle count after deleting the UltraDict should be 0 again")
+        ultra = UltraDict(nested={ 1: 1}, recurse=True)
+        file_count = len(p.open_files())
+        self.assertEqual(file_count, 12, "nested file handle count should be 12")
+        del ultra
+        file_count = len(p.open_files())
+        self.assertEqual(file_count, 0, "nested file handle count after deleting UltraDict should be 0 again")
 
-    def testExampleSimple(self):
+    def test_example_simple(self):
         filename = "examples/simple.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
         self.assertEqual(ret.stdout, b"Length:  100000  ==  100000  ==  100000\n")
 
-    def testExampleParallel(self):
+    def test_example_parallel(self):
         filename = "examples/parallel.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
         self.assertEqual(ret.stdout, b'Started 2 processes..\nJoined 2 processes\nCounter:  100000  ==  100000\n')
 
-    def testExampleNested(self):
+    def test_example_nested(self):
         filename = "examples/nested.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
         self.assertEqual(ret.stdout, b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}\n")
+
+    def test_example_recover_from_stale_lock(self):
+        filename = "examples/recover_from_stale_lock.py"
+        ret = self.exec(filename)
+        self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
+        self.assertEqual(ret.stdout.splitlines()[-1], b"Counter: 100 == 100")
 
 if __name__ == '__main__':
     unittest.main()

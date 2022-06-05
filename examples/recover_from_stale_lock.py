@@ -39,7 +39,7 @@ def simulate_crash(d):
 def run(d, target):
     process = multiprocessing.process.current_process()
     print(f"Started process name={process.name}, pid={process.pid} {d.lock}")
-    
+
     # Give all processes some grace period to print their start messages
     time.sleep(1)
 
@@ -67,7 +67,7 @@ def run(d, target):
 
                 simulate_crash(d)
 
-        except d.CannotAcquireLockException:
+        except d.Exceptions.CannotAcquireLock:
             # We measure the time on how long we fail to acquire a lock
             if not time_start:
                 time_start = time.monotonic()
@@ -78,7 +78,7 @@ def run(d, target):
             # we will steal it.
             if time_passed >= 1:
                 print(process.name, process.pid, 'cannot acquire lock, more than 1 s have passed, lock must be stale')
-                
+
                 # Check that the process is dead that is owning the stale lock
                 pid = d.lock.get_remote_pid()
 
@@ -100,7 +100,10 @@ def run(d, target):
 
                 # Steal the stale lock
                 print(f"Process {multiprocessing.current_process().pid} is resetting lock from {pid}")
+                # Call steal() ensures that we don't accidentally steal the lock when someone else had
                 d.lock.steal()
+                # Reset stale lock timer after stealing
+                time_start = 0
             else:
                 print(f'{process.name} cannot acquire lock, will try again, {time_passed:.3f} s have passed')
 
@@ -132,4 +135,4 @@ if __name__ == '__main__':
     #ultra.print_status()
     #ultra.lock.print_status()
 
-    print("Counter: ", ultra['counter'], ' == ', count)
+    print("Counter:", ultra['counter'], '==', count)

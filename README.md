@@ -174,7 +174,7 @@ Python 3.9.2 on linux
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=True, recurse=False, **kwargs)`
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=False, recurse=False, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
@@ -208,6 +208,13 @@ it is not visible or accessible to new processes. All existing, still connected 
 dict.
 
 `recurse`: If True, any nested dict objects will be automaticall wrapped in an `UltraDict` allowing transparent nested updates.
+
+## Memory management
+
+`UltraDict` uses shared memory buffers and those usually live is RAM. As `UltraDict` does not use any management processes to keep track of buffers it cannot know when to free those shared memory buffers again.
+
+By convention you should set the parameter `auto_unlink` to True for exactly one of the processes that is using the `UltraDict`. When this process with
+the `auto_unlink=True` flag ends, it will try to unlink (free) all shared memory buffers.
 
 ## Advanced usage
 

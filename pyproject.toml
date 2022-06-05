@@ -11,7 +11,7 @@ disable         = ["missing-module-docstring", "missing-class-docstring", "missi
                    "unidiomatic-typecheck", "multiple-imports", "fixme", "no-else-return", "unused-argument",
 		   "invalid-name", "import-outside-toplevel", "no-self-use", "method-hidden", "line-too-long",
 		   "raise-missing-from", "redefined-builtin", "logging-too-many-args", "logging-fstring-interpolation",
-		   "deprecated-method", "inconsistent-return-statements"]
+		   "deprecated-method", "inconsistent-return-statements", "too-many-instance-attributes"]
 
 [tool.pylint.'DESIGN']
 max-attributes  = 22

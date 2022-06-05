@@ -13,7 +13,7 @@ from UltraDict import UltraDict
 if __name__ == '__main__':
 
     # No name provided, create a new dict with random name
-    ultra = UltraDict(recurse=True)
+    ultra = UltraDict(name="my_name", recurse=True)
     # Connect `other` dict to `ultra` dict via `name`
     other = UltraDict(name=ultra.name)
 
