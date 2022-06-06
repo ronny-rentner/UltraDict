@@ -31,17 +31,12 @@ except ModuleNotFoundError:
     pass
 
 # Hack needed for relative import
-import sys
 __path__ = ['.']
 from . import Exceptions
 
 try:
-    try:
-        from .utils import log
-        log.log_targets = [ sys.stderr ]
-    except ImportError:
-        from utils import log
-        log.log_targets = [ sys.stderr ]
+    from .utils import log
+    log.log_targets = [ sys.stderr ]
 
     #orig = log.render_message_arguments
 
@@ -291,7 +286,7 @@ class UltraDict(collections.UserDict, dict):
             if full_dump_size:
                 full_dump_size = -(full_dump_size // -4096) * 4096
             if not shared_lock:
-                log.warn('You are running on win32 without any locks. Consider setting shared_lock=True')
+                log.warning('You are running on win32, potentially without locks. Consider setting shared_lock=True')
 
         assert buffer_size < 2**32
 
@@ -730,13 +725,13 @@ class UltraDict(collections.UserDict, dict):
                 # other process already got around overwriting the current position. It is possible to
                 # recover from this situation if and only if a new, fresh full dump exists that can be loaded.
                 if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
-                    log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
+                    log.warning(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
                     return self.apply_update()
 
                 # As a last resort, let's get a lock. This way we are safe but slow.
                 with self.lock:
                     if self.full_dump_counter < int.from_bytes(self.full_dump_counter_remote, 'little'):
-                        log.warn(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
+                        log.warning(f"Full dumps too fast full_dump_counter={self.full_dump_counter} full_dump_counter_remote={int.from_bytes(self.full_dump_counter_remote, 'little')}. Consider increasing buffer_size.")
                         return self.apply_update()
 
                 raise e
@@ -922,7 +917,7 @@ class UltraDict(collections.UserDict, dict):
             self.control.unlink()
             self.buffer.unlink()
             if full_dump_name:
-                self.unlink_by_name(full_dump_name, ignore_error=True)
+                self.unlink_by_name(full_dump_name, ignore_errors=True)
 
             if self.recurse:
                 self.unlink_recursed()
@@ -937,23 +932,24 @@ class UltraDict(collections.UserDict, dict):
         if not self.recurse or (type(self.recurse_register) != UltraDict):
             raise Exception("Cannot unlink recursed for non-recurse UltraDict")
 
+        ignore_errors = sys.platform == 'win32'
         for name in self.recurse_register.keys():
             #log.debug("Unlink recursed child name={}", name)
-            self.unlink_by_name(name=name)
-            self.unlink_by_name(name=f"{name}_memory")
+            self.unlink_by_name(name=name, ignore_errors=ignore_errors)
+            self.unlink_by_name(name=f"{name}_memory", ignore_errors=ignore_errors)
 
         self.recurse_register.close(unlink=True)
 
 
     @staticmethod
-    def unlink_by_name(name, ignore_error=False):
+    def unlink_by_name(name, ignore_errors=False):
         try:
             memory = UltraDict.get_memory(create=False, name=name)
             #log.debug("Unlinking memory '{}'", name)
             memory.unlink()
             memory.close()
         except Exceptions.CannotAttachSharedMemory as e:
-            if not ignore_error:
+            if not ignore_errors:
                 raise e
 
 

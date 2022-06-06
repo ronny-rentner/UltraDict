@@ -2,12 +2,14 @@ import unittest
 import subprocess
 import sys
 
-
 sys.path.insert(0, '..')
-
 from UltraDict import UltraDict
+
+# Disable logging
 if hasattr(UltraDict.log, 'disable'):
     UltraDict.log.disable(UltraDict.log.CRITICAL)
+else:
+    UltraDict.log.set_level(UltraDict.log.Levels.error)
 
 class UltraDictTests(unittest.TestCase):
 
@@ -81,6 +83,7 @@ class UltraDictTests(unittest.TestCase):
         # TODO
         pass
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux")
     def test_cleanup(self):
         # TODO
         import psutil
@@ -104,19 +107,19 @@ class UltraDictTests(unittest.TestCase):
         filename = "examples/simple.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout, b"Length:  100000  ==  100000  ==  100000\n")
+        self.assertEqual(ret.stdout.splitlines()[-1], b"Length:  100000  ==  100000  ==  100000")
 
     def test_example_parallel(self):
         filename = "examples/parallel.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout, b'Started 2 processes..\nJoined 2 processes\nCounter:  100000  ==  100000\n')
+        self.assertEqual(ret.stdout.splitlines()[-1], b'Counter:  100000  ==  100000')
 
     def test_example_nested(self):
         filename = "examples/nested.py"
         ret = self.exec(filename)
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout, b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}\n")
+        self.assertEqual(ret.stdout.splitlines()[-1], b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}")
 
     def test_example_recover_from_stale_lock(self):
         filename = "examples/recover_from_stale_lock.py"
