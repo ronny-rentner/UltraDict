@@ -6,7 +6,7 @@ import Cython.Build
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-version = '0.0.4'
+version = '0.0.5'
 
 ext = Extension(name="UltraDict", sources=["UltraDict.py"])
 
@@ -25,5 +25,5 @@ setup(
     zip_safe=False,
     ext_modules=Cython.Build.cythonize(ext, compiler_directives={'language_level' : "3"}),
     setup_requires=['cython>=0.24.1'],
-    python_requires=">=3.9",
+    python_requires=">=3.8",
 )

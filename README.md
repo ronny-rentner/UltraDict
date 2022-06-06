@@ -110,6 +110,11 @@ Back in the first Python REPL:
 
 ## Performance comparison
 
+Lets compare a classical Python dict, UltraDict, multiprocessing.Manager and Redis.
+
+Note that this comparison is not a real life workload. It was exectured on Debian Linux 11
+with Redis installed from the Debian package and with the default configuration of Redis.
+
 ```python
 Python 3.9.2 on linux
 >>> 
@@ -122,7 +127,7 @@ Python 3.9.2 on linux
 >>> ultra[500]
 500
 >>> # Now let's do some performance testing
->>> import multiprocessing, timeit
+>>> import multiprocessing, redis, timeit
 >>> orig = dict(ultra)
 >>> len(orig)
 10000
@@ -131,45 +136,41 @@ Python 3.9.2 on linux
 >>> managed = multiprocessing.Manager().dict(orig)
 >>> len(managed)
 10000
+>>> r = redis.Redis()
+>>> r.flushall()
+>>> r.mset(orig)
 ```
 
 ### Read performance
 
+We are factor 15 slower than a real, local dict, but way faster than using a Manager. If you need full read performance, you can access the underlying cache `ultra.data` directly and get almost original dict performance, of course at the cost of not having real-time updates anymore.
+>>>
 ```python
->>> timeit.timeit('orig[1]', globals=globals())
-0.03503723500762135
->>>
->>> timeit.timeit('ultra[1]', globals=globals())
-0.380401570990216
->>>
->>> timeit.timeit('managed[1]', globals=globals())
-15.848494678968564
->>>
->>> # We are factor 10 slower than a real, local dict,
->>> # but way faster than using a Manager
->>>
->>> # If you need full read performance, you can access the underlying
->>> # cache directly and get almost original dict performance,
->>> # of course at the cost of not having real-time updates anymore.
->>>
->>> timeit.timeit('ultra.data[1]', globals=globals())
-0.047667117964010686
+>>> timeit.timeit('orig[1]', globals=globals()) # original
+0.03832335816696286
+>>> timeit.timeit('ultra[1]', globals=globals()) # UltraDict
+0.5248982920311391
+>>> timeit.timeit('managed[1]', globals=globals()) # Manager
+40.85506196087226
+>>> timeit.timeit('r.get(1)', globals=globals()) # Redis
+49.3497632863
+>>> timeit.timeit('ultra.data[1]', globals=globals()) # UltraDict data cache
+0.04309639008715749
 ```
 
 ### Write performance
 
+We are factor 100 slower than a real, local Python dict, but still factor 10 faster than using a Manager and much fast than Redis.
+
 ```python
->>> timeit.timeit('orig[1] = 1', globals=globals())
-0.02869905502302572
->>>
->>> timeit.timeit('ultra[1] = 1', globals=globals())
-2.259694856009446
->>>
->>> timeit.timeit('managed[1] = 1', globals=globals())
-16.352361536002718
->>>
->>> # We are factor 100 slower than a real, local dict,
->>> # but still way faster than using a Manager
+>>> min(timeit.repeat('orig[1] = 1', globals=globals())) # original
+0.028232071083039045
+>>> min(timeit.repeat('ultra[1] = 1', globals=globals())) # UltraDict
+2.911152713932097
+>>> min(timeit.repeat('managed[1] = 1', globals=globals())) # Manager
+31.641707635018975
+>>> min(timeit.repeat('r.set(1, 1)', globals=globals())) # Redis
+124.3432381930761
 ```
 
 ## Parameters
@@ -275,6 +276,9 @@ Note: All status keys ending with `_remote` are stored in the control shared mem
 
 Other things you can do:
 ```python
+>>> # Create a full dump
+>>> ultra.dump()
+
 >>> # Load latest full dump if one is available
 >>> ultra.load()
 
@@ -291,12 +295,15 @@ Other things you can do:
 >>> # but can be useful to call after a forced load.
 >>> ultra.apply_update()
 
->>> # Access underlying local dict directly
+>>> # Access underlying local dict directly for maximum performance
 >>> ultra.data
 
 >>> # Use any serializer you like, given it supports the loads() and dumps() methods
->>> import pickle 
->>> ultra = UltraDict(serializer=pickle)
+>>> import json
+>>> ultra = UltraDict(serializer=json)
+
+>>> # Close connection to shared memory; will return the data as a dict
+>>> ultra.close()
 
 >>> # Unlink all shared memory, it will not be visible to new processes afterwards
 >>> ultra.unlink()
