@@ -30,21 +30,14 @@ try:
 except ModuleNotFoundError:
     pass
 
-# Hack needed for relative import
+# Hack needed for relative import (does not always work)
+#sys.path.insert(0, '..')
 __path__ = ['.']
 from . import Exceptions
 
 try:
     from .utils import log
     log.log_targets = [ sys.stderr ]
-
-    #orig = log.render_message_arguments
-
-    #def render_message_arguments(self, *args, **kwargs):
-    #    return str(id(self)) + ' | ' + orig(self, *args, **kwargs)
-
-    #log.render_message_arguments = render_message_arguments
-
 except ModuleNotFoundError:
     import logging as log
 

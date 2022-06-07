@@ -8,7 +8,8 @@ Features:
 * No running manager processes
 * Works in spawn and fork context
 * Safe locking between independent processes
-* Tested with Python >= v3.8 on Linux and Windows
+* Tested with Python >= v3.8 on Linux, Windows and Mac
+* Convenient, no setter or getters necessary
 * Optional recursion for nested dicts
 
 [![PyPI Package](https://img.shields.io/pypi/v/ultradict.svg)](https://pypi.org/project/ultradict)
@@ -143,7 +144,6 @@ Python 3.9.2 on linux
 
 ### Read performance
 
-We are factor 15 slower than a real, local dict, but way faster than using a Manager. If you need full read performance, you can access the underlying cache `ultra.data` directly and get almost original dict performance, of course at the cost of not having real-time updates anymore.
 >>>
 ```python
 >>> timeit.timeit('orig[1]', globals=globals()) # original
@@ -158,9 +158,9 @@ We are factor 15 slower than a real, local dict, but way faster than using a Man
 0.04309639008715749
 ```
 
-### Write performance
+We are factor 15 slower than a real, local dict, but way faster than using a Manager. If you need full read performance, you can access the underlying cache `ultra.data` directly and get almost original dict performance, of course at the cost of not having real-time updates anymore.
 
-We are factor 100 slower than a real, local Python dict, but still factor 10 faster than using a Manager and much fast than Redis.
+### Write performance
 
 ```python
 >>> min(timeit.repeat('orig[1] = 1', globals=globals())) # original
@@ -173,9 +173,11 @@ We are factor 100 slower than a real, local Python dict, but still factor 10 fas
 124.3432381930761
 ```
 
+We are factor 100 slower than a real, local Python dict, but still factor 10 faster than using a Manager and much fast than Redis.
+
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=False, recurse=False, **kwargs)`
+`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=None, recurse=False, **kwargs)`
 
 `name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
@@ -191,7 +193,7 @@ Whenever the buffer is full, a full dump will be created. A new shared memory is
 big enough for the full dump. Afterwards the streaming buffer is reset.  All other users of the
 dict will automatically load the full dump and continue streaming updates.
 
-`serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, json.
+`serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, jsons.
 The module or object provided must support the methods *loads()* and *dumps()*
 
 `shared_lock`: When writing to the same dict at the same time from multiple, independent processes,
@@ -299,8 +301,8 @@ Other things you can do:
 >>> ultra.data
 
 >>> # Use any serializer you like, given it supports the loads() and dumps() methods
->>> import json
->>> ultra = UltraDict(serializer=json)
+>>> import jsons
+>>> ultra = UltraDict(serializer=jsons)
 
 >>> # Close connection to shared memory; will return the data as a dict
 >>> ultra.close()
