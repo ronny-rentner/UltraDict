@@ -78,6 +78,17 @@ class UltraDictTests(unittest.TestCase):
 
         self.assertEqual(ultra.items(), other.items())
 
+    def test_delete(self):
+        import random
+        import string
+        letters = string.ascii_lowercase
+        rand_str =   ''.join(random.choice(letters) for i in range(1000)) 
+        my_dict = UltraDict()
+        for i in range(100_000):
+            my_dict[i] = rand_str
+        for i in list(my_dict.keys()):
+            del my_dict[i]
+        self.assertEqual(len(my_dict), 0)
 
     def test_full_dump(self):
         # TODO

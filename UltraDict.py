@@ -662,7 +662,8 @@ class UltraDict(collections.UserDict, dict):
 
                 # todo: is is necessary? apply_update() is also done inside dump()
                 self.apply_update()
-                self.data.__setitem__(key, item)
+                if not delete:
+                    self.data.__setitem__(key, item)
                 self.dump()
                 return
 
