@@ -1,4 +1,5 @@
 # UltraDict
+
 Sychronized, streaming Python dictionary that uses shared memory as a backend
 
 **Warning: This is an early hack. There are only few unit tests and so on. Maybe not stable!**
@@ -14,6 +15,8 @@ Features:
 
 [![PyPI Package](https://img.shields.io/pypi/v/ultradict.svg)](https://pypi.org/project/ultradict)
 [![Run Python Tests](https://github.com/ronny-rentner/UltraDict/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ronny-rentner/UltraDict/actions/workflows/ci.yml)
+[![Python >=3.8](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/github/license/ronny-rentner/UltraDict.svg)](https://github.com/ronny-rentner/UltraDict/blob/master/LICENSE.md)
 
 ## General Concept
 
