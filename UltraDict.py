@@ -30,16 +30,21 @@ try:
 except ModuleNotFoundError:
     pass
 
-# Hack needed for relative import (does not always work)
-#sys.path.insert(0, '..')
-__path__ = ['.']
-from . import Exceptions
-
 try:
-    from .utils import log
-    log.log_targets = [ sys.stderr ]
+    import ultraimport
+    Exceptions = ultraimport('__dir__/Exceptions.py')
+    try:
+        log = ultraimport('__dir__/ultils/log.py')
+        log.log_targets = [ sys.stderr ]
+    except ultraimport.ResolveImportError:
+        import logging as log
 except ModuleNotFoundError:
-    import logging as log
+    from . import Exceptions
+    try:
+        from .utils import log
+        log.log_targets = [ sys.stderr ]
+    except ModuleNotFoundError:
+        import logging as log
 
 def remove_shm_from_resource_tracker():
     """
@@ -68,7 +73,6 @@ remove_shm_from_resource_tracker()
 class UltraDict(collections.UserDict, dict):
 
     Exceptions = Exceptions
-
     log = log
 
     class RLock(multiprocessing.synchronize.RLock):
@@ -788,6 +792,7 @@ class UltraDict(collections.UserDict, dict):
         self.apply_update()
         return self.data[key]
 
+    # deprecated in Python 3
     def has_key(self, key):
         self.apply_update()
         return key in self.data
