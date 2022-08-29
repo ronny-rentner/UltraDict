@@ -18,11 +18,19 @@
 # limitations under the License.
 #
 
+import time
+
 class CannotAttachSharedMemory(Exception):
     pass
 
 class CannotAcquireLock(Exception):
-    pass
+    def __init__(self, *args, blocking_pid=0, timestamp=None, **kwargs):
+        super().__init__(*args, *kwargs)
+        self.blocking_pid = blocking_pid
+        self.timestamp = timestamp or time.monotonic()
+
+    def reset_timestamp(self):
+        self.timestamp = time.monotonic()
 
 class ParameterMismatch(Exception):
     pass

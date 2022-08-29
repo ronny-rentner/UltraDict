@@ -14,17 +14,24 @@ import multiprocessing, time, signal
 
 # For better visibility in console, only count to 100
 count = 100
-#count = 100_000
+count = 10_000
 
 number_of_processes = 5
 
 # The process that will find the counter to be 10 will
-# simulate a hard crash and a stale lock
+# simulate a hard crash (using SIGKILL) and a stale lock
 simulate_crash_at_count = 10
 
-def simulate_crash(d):
+# Contract between all uses of the UltraDict to never hold the lock
+# longer than this amount of seconds.
+# If any user/process is holding the lock longer, the other processes
+# should be allowed to steal the lock afterchecking that the blocking
+# process is actually dead.
+stale_lock_timeout = 1.0
+
+def possibly_simulate_crash(d):
     """
-    Simulate random crash in one of the worker processes.
+    Simulate random crash if the counter has reached the target value.
     This will cause the lock to be stale and not released.
     """
     if d['counter'] == simulate_crash_at_count:
@@ -34,7 +41,7 @@ def simulate_crash(d):
         # no time for any cleanup whatsoever
         os.kill(process.pid, signal.SIGKILL)
         # This message should never print
-        print("Killed")
+        print("Killed. (This message should never print!)")
 
 def run(d, target):
     process = multiprocessing.process.current_process()
@@ -45,6 +52,9 @@ def run(d, target):
 
     # Timer to protect from stale locks
     time_start = 0
+
+    # The pid of the process that is blocking the lock
+    blocking_pid = 0
 
     while True:
         print("start count: ", d['counter'], ' | ', process.name, process.pid)
@@ -65,47 +75,45 @@ def run(d, target):
                 # After sucessfully incrementing the counter we reset our timer
                 time_start = 0
 
-                simulate_crash(d)
+                possibly_simulate_crash(d)
 
-        except d.Exceptions.CannotAcquireLock:
+        except d.Exceptions.CannotAcquireLock as e:
+
             # We measure the time on how long we fail to acquire a lock
             if not time_start:
-                time_start = time.monotonic()
+                time_start = e.timestamp
+                blocking_pid = e.blocking_pid
+
+            # We should not be the blocking pid
+            assert process.pid != blocking_pid
 
             time_passed = time.monotonic() - time_start
 
             # If the lock is stale for more than 1 second (plus the time for the initial attempt),
             # we will steal it.
-            if time_passed >= 1:
+            if time_passed >= stale_lock_timeout:
                 print(process.name, process.pid, 'cannot acquire lock, more than 1 s have passed, lock must be stale')
 
-                # Check that the process is dead that is owning the stale lock
-                pid = d.lock.get_remote_pid()
+                # Check that the process blocking the lock is still the same as at the start_time
+                # If not, some other process got the lock in the meantime
+                #if blocking_pid != d.lock.get_remote_pid():
+                #    time_start = 0
+                #    blockig_pid = 0
+                #    continue
 
-                # The lock pid must not be our pid, after all we could not acquire the lock
-                assert process.pid != pid
-
-                # No process must exist anymore with the pid
-                try:
-                    import psutil
-                    p = psutil.Process(pid)
-                    if p and p.is_running() and p.status() not in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
-                        raise Exception(f"Stale lock but process is still alive, something seems really wrong {pid} / {process.pid}")
-                except psutil.NoSuchProcess:
-                    # If the process is already gone, we cannot find information about it.
-                    # It will be safe to steal the lock.
-                    pass
-                except Exception as e:
-                    raise e
+                # The lock blocking pid cannot not be our pid, after all we could not acquire the lock
+                assert process.pid != blocking_pid
 
                 # Steal the stale lock
-                print(f"Process {multiprocessing.current_process().pid} is resetting lock from {pid}")
+                print(f"Process {process.name} ({process.pid}) is resetting lock from {blocking_pid}")
                 # Call steal() ensures that we don't accidentally steal the lock when someone else had
-                d.lock.steal()
+                result = d.lock.steal_from_dead(from_pid=blocking_pid, release=True)
+                print(f"Lock stealing result: {result} {d.lock.status()}")
                 # Reset stale lock timer after stealing
                 time_start = 0
+                blocking_pid = 0
             else:
-                print(f'{process.name} cannot acquire lock, will try again, {time_passed:.3f} s have passed')
+                print(f'{process.name} {multiprocessing.current_process().pid} cannot acquire lock, will try again, {time_passed:.3f} s have passed')
 
 
 

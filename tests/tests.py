@@ -82,7 +82,7 @@ class UltraDictTests(unittest.TestCase):
         import random
         import string
         letters = string.ascii_lowercase
-        rand_str =   ''.join(random.choice(letters) for i in range(1000)) 
+        rand_str =   ''.join(random.choice(letters) for i in range(1000))
         my_dict = UltraDict()
         for i in range(100_000):
             my_dict[i] = rand_str

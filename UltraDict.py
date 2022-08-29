@@ -34,7 +34,7 @@ try:
     import ultraimport
     Exceptions = ultraimport('__dir__/Exceptions.py')
     try:
-        log = ultraimport('__dir__/ultils/log.py')
+        log = ultraimport('__dir__/utils/log.py', package=1).log
         log.log_targets = [ sys.stderr ]
     except ultraimport.ResolveImportError:
         import logging as log
@@ -89,8 +89,9 @@ class UltraDict(collections.UserDict, dict):
         This is needed if you write to the shared memory with independent processes.
         """
 
-        __slots__ = 'parent', 'has_lock', 'lock_remote', 'pid', 'pid_remote', 'ctx', 'lock_atomic', \
-            'lock_error_timestamp', 'lock_error_pid'
+        __slots__ = 'parent', 'has_lock',  'ctx', 'lock_atomic', 'lock_remote', \
+            'pid', 'pid_bytes', 'pid_remote', 'pid_remote_ctx', 'pid_remote_atomic', \
+            'lock_error_pid'
 
         lock_counter_goal = 10_000
 
@@ -101,44 +102,53 @@ class UltraDict(collections.UserDict, dict):
             # referring to a memory view
             self.lock_remote = getattr(parent, lock_name)
             self.pid_remote = getattr(parent, pid_name)
-            self.pid = multiprocessing.current_process().pid
+
+            self.init_pid()
+
             # When we fail to acquire a lock, we store the pid of the process that
             # currently holds the lock
             self.lock_error_pid = 0
-            # When we fail to acquire a lock, we store a timestamp to know how long
-            # we have failed to acquire a lock
-            self.lock_error_timestamp = None
             try:
                 self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
+                self.pid_remote_ctx = atomics.atomicview(buffer=self.pid_remote[0:4], atype=atomics.BYTES)
             except NameError as e:
                 self.cleanup()
                 raise e
             self.lock_atomic = self.ctx.__enter__()
+            self.pid_remote_atomic = self.pid_remote_ctx.__enter__()
 
             def after_fork():
                 if self.has_lock:
                     raise Exception("Release the SharedLock before you fork the process")
 
                 # After forking, we got a new pid
-                self.pid = multiprocessing.current_process().pid
+                self.init_pid()
 
             if sys.platform != 'win32':
                 os.register_at_fork(after_in_child=after_fork)
 
+        def init_pid(self):
+            self.pid = multiprocessing.current_process().pid
+            self.pid_bytes = self.pid.to_bytes(4, 'little')
+
         ##@profile
         def acquire(self):
             #log.debug("Acquire lock")
-            counter = 0
 
             # If we already own the lock, just increment our counter
             if self.has_lock:
                 #log.debug("Already got lock", self.has_lock)
                 self.has_lock += 1
-                ipid = int.from_bytes(self.pid_remote, 'little')
-                if ipid != self.pid:
-                    raise Exception(f"Error, '{ipid}' stole our lock '{self.pid}'")
+
+
+                #ipid = int.from_bytes(self.pid_remote, 'little')
+                #if ipid != self.pid:
+                #    raise Exception(f"Error, '{ipid}' stole our lock '{self.pid}'")
 
                 return True
+
+            counter = 0
+            lock_error_pid = 0
 
             # We try to get the lock and busy wait until it's ready
             while True:
@@ -151,11 +161,13 @@ class UltraDict(collections.UserDict, dict):
 
                     # If nobody owns the lock, the pid should be zero
                     assert ipid == 0
-                    self.pid_remote[:] = self.pid.to_bytes(4, 'little')
-
-                    self.lock_error_timestamp = None
+                    self.pid_remote[:] = self.pid_bytes
                     return True
                 else:
+
+                    if not counter:
+                        lock_error_pid = int.from_bytes(self.pid_remote, 'little')
+
                     # Oh no, already locked by someone else
                     # TODO: Busy wait? Timeout?
                     counter += 1
@@ -163,9 +175,10 @@ class UltraDict(collections.UserDict, dict):
                         # TODO: Record timestamp when starting to wait
                         #if not self.lock_error_timestamp:
                         #    self.lock_error_timestamp = time.monotonic()
-                        #    self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
-                        #    assert self.lock_error_pid > 0
-                        raise Exceptions.CannotAcquireLock("Failed to acquire lock: ", counter)
+
+                        #self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
+                        #assert self.lock_error_pid > 0, self.status()
+                        raise Exceptions.CannotAcquireLock("Failed to acquire lock: ", counter, blocking_pid=self.get_remote_pid())
 
 
         ##@profile
@@ -206,15 +219,43 @@ class UltraDict(collections.UserDict, dict):
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
-        def steal(self, from_pid=0):
+        def steal(self, from_pid=0, release=False):
             if self.has_lock:
-                raise Exception("Cannot reset lock if we have acquired it. Use release() to release the lock")
+                raise Exception("Cannot steal the lock because we have already acquired it. Use release() to release the lock.")
+
+            #log.debug(f'Stealing from_pid={from_pid}, remote_pid={self.get_remote_pid()}')
+
+            # It's not locked, so nothing to steal from
+            if not self.get_remote_lock():
+                return False
+
+            # Someone else has stolen the lock
+            if from_pid != self.get_remote_pid():
+                return False
 
             # TODO: Add protection to only steal from the right pid
-            self.pid_remote[:] = b'\x00\x00\x00\x00'
-            result = self.lock_atomic.cmpxchg_strong(expected=b'\x01', desired=b'\x00')
-
+            result = self.pid_remote_atomic.cmpxchg_strong(expected=from_pid.to_bytes(4, 'little'), desired=self.pid_bytes)
+            if result.success:
+                self.has_lock = 1
+                if release:
+                    self.release()
             return result.success
+
+        def steal_from_dead(self, from_pid=0, release=False):
+            import psutil
+            # No process must exist anymore with the from_pid or it must at least be dead (ie. zombie status)
+            try:
+                p = psutil.Process(from_pid)
+                if p and p.is_running() and p.status() not in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
+                    raise Exception(f"Trying to steal lock from process that is still alive, something seems really wrong {from_pid} / {self.pid}")
+            except psutil.NoSuchProcess:
+                # If the process is already gone, we cannot find information about it.
+                # It will be safe to steal the lock.
+                pass
+            except Exception as e:
+                raise e
+
+            return self.steal(from_pid=from_pid, release=release)
 
         def status(self):
             return {
@@ -236,8 +277,15 @@ class UltraDict(collections.UserDict, dict):
                 del self.ctx
             if hasattr(self, 'lock_atomic'):
                 del self.lock_atomic
+            if hasattr(self, 'pid_remote_ctx'):
+                self.pid_remote_ctx.__exit__(None, None, None)
+                del self.pid_remote_ctx
+            if hasattr(self, 'pid_remote_aotmic'):
+                del self.pid_remote_atomic
             del self.lock_remote
             del self.pid_remote
+            del self.pid_bytes
+            del self.pid
 
         def get_remote_pid(self):
             return int.from_bytes(self.pid_remote, 'little')
@@ -430,7 +478,7 @@ class UltraDict(collections.UserDict, dict):
     def __del__(self):
         #log.debug("__del__", self.name)
         self.close()
-        if self.recurse:
+        if hasattr(self, 'recurse') and self.recurse:
             #log.debug("Close recurse register")
             self.recurse_register.close()
             del self.recurse_register
