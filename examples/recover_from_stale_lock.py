@@ -14,7 +14,7 @@ import multiprocessing, time, signal
 
 # For better visibility in console, only count to 100
 count = 100
-count = 10_000
+#count = 10_000
 
 number_of_processes = 5
 
