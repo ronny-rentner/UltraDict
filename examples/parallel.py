@@ -20,7 +20,7 @@ count = 100_000
 def run(name, target, x):
     # Connect to the existing UltraDict by its name
     d = UltraDict(name=name, shared_lock=True, auto_unlink=False)
-    for i in range(target): 
+    for i in range(target):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
         with d.lock:

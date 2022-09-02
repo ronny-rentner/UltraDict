@@ -90,6 +90,16 @@ class UltraDictTests(unittest.TestCase):
             del my_dict[i]
         self.assertEqual(len(my_dict), 0)
 
+    def test_already_exists(self):
+        name = 'ultra_already_exists_test'
+        # Ensure we have a clean state before the test
+        UltraDict.unlink_by_name(name, ignore_errors=True)
+        UltraDict.unlink_by_name(name + '_memory', ignore_errors=True)
+        # Create should be possible now
+        u1 = UltraDict(name=name, create=True)
+        with self.assertRaises(UltraDict.Exceptions.AlreadyExists):
+            u2 = UltraDict(name=name, create=True)
+
     def test_full_dump(self):
         # TODO
         pass
@@ -138,5 +148,12 @@ class UltraDictTests(unittest.TestCase):
         self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
         self.assertEqual(ret.stdout.splitlines()[-1], b"Counter: 100 == 100")
 
+
 if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        for i in range(0, len(sys.argv)):
+            if sys.argv[i].startswith('-'):
+                continue
+            if '.' not in sys.argv[i]:
+                sys.argv[i] = f"UltraDictTests.{sys.argv[i]}"
     unittest.main()

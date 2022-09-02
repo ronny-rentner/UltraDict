@@ -4,6 +4,8 @@
 # A crash is simulated in one of the processes while it currently holds the shared lock.
 # A strategy for recovery with a timeout is demonstrated.
 #
+# NOTE: There is recover_from_stale_lock.py and recover_from_stale_lock_manual.py. The manual example
+#       manages the decision itself when a lock is stale.
 
 import sys, os
 sys.path.insert(0, '..')
@@ -14,13 +16,13 @@ import multiprocessing, time, signal
 
 # For better visibility in console, only count to 100
 count = 100
-#count = 10_000
+#count = 100_000
 
 number_of_processes = 5
 
 # The process that will find the counter to be 10 will
 # simulate a hard crash (using SIGKILL) and a stale lock
-simulate_crash_at_count = 10
+simulate_crash_at_target_count = 10
 
 # Contract between all uses of the UltraDict to never hold the lock
 # longer than this amount of seconds.
@@ -34,7 +36,7 @@ def possibly_simulate_crash(d):
     Simulate random crash if the counter has reached the target value.
     This will cause the lock to be stale and not released.
     """
-    if d['counter'] == simulate_crash_at_count:
+    if d['counter'] == simulate_crash_at_target_count:
         process = multiprocessing.process.current_process()
         print(f"Simulating crash, kill process name={process.name}, pid={process.pid}, lock={d.lock}")
         # SIGKILL is a hard kill on kernel level leaving the process
@@ -50,72 +52,20 @@ def run(d, target):
     # Give all processes some grace period to print their start messages
     time.sleep(1)
 
-    # Timer to protect from stale locks
-    time_start = 0
-
-    # The pid of the process that is blocking the lock
-    blocking_pid = 0
-
-    while True:
+    need_to_count = True
+    while need_to_count:
         print("start count: ", d['counter'], ' | ', process.name, process.pid)
-        try:
-            # Adding 1 to the counter is unfortunately not an atomic operation in Python,
-            # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-            with d.lock:
-                if d['counter'] < target:
-                    # Under the lock, we can safely read, modify and
-                    # write back any values in the shared dict
-                    d['counter'] += 1
+        # Adding 1 to the counter is unfortunately not an atomic operation in Python,
+        # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
+        with d.lock(1.0, steal=True):
+            if need_to_count := d['counter'] < target:
+                # Under the lock, we can safely read, modify and
+                # write back any values in the shared dict.
+                d['counter'] += 1
 
-                    print("end   count: ", d['counter'], ' | ', process.name, process.pid)
-                else:
-                    # Finished counting to target
-                    return
+            print("end   count: ", d['counter'], ' | ', process.name, process.pid)
 
-                # After sucessfully incrementing the counter we reset our timer
-                time_start = 0
-
-                possibly_simulate_crash(d)
-
-        except d.Exceptions.CannotAcquireLock as e:
-
-            # We measure the time on how long we fail to acquire a lock
-            if not time_start:
-                time_start = e.timestamp
-                blocking_pid = e.blocking_pid
-
-            # We should not be the blocking pid
-            assert process.pid != blocking_pid
-
-            time_passed = time.monotonic() - time_start
-
-            # If the lock is stale for more than 1 second (plus the time for the initial attempt),
-            # we will steal it.
-            if time_passed >= stale_lock_timeout:
-                print(process.name, process.pid, 'cannot acquire lock, more than 1 s have passed, lock must be stale')
-
-                # Check that the process blocking the lock is still the same as at the start_time
-                # If not, some other process got the lock in the meantime
-                #if blocking_pid != d.lock.get_remote_pid():
-                #    time_start = 0
-                #    blockig_pid = 0
-                #    continue
-
-                # The lock blocking pid cannot not be our pid, after all we could not acquire the lock
-                assert process.pid != blocking_pid
-
-                # Steal the stale lock
-                print(f"Process {process.name} ({process.pid}) is resetting lock from {blocking_pid}")
-                # Call steal() ensures that we don't accidentally steal the lock when someone else had
-                result = d.lock.steal_from_dead(from_pid=blocking_pid, release=True)
-                print(f"Lock stealing result: {result} {d.lock.status()}")
-                # Reset stale lock timer after stealing
-                time_start = 0
-                blocking_pid = 0
-            else:
-                print(f'{process.name} {multiprocessing.current_process().pid} cannot acquire lock, will try again, {time_passed:.3f} s have passed')
-
-
+            possibly_simulate_crash(d)
 
 if __name__ == '__main__':
 

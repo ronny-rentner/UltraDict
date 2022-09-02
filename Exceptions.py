@@ -29,13 +29,18 @@ class CannotAcquireLock(Exception):
         self.blocking_pid = blocking_pid
         self.timestamp = timestamp or time.monotonic()
 
-    def reset_timestamp(self):
-        self.timestamp = time.monotonic()
+class CannotAcquireLockTimeout(CannotAcquireLock):
+    def __init__(self, *args, time_passed=None, **kwargs):
+        super().__init__(*args, *kwargs)
+        self.time_passed = time_passed
 
 class ParameterMismatch(Exception):
     pass
 
 class AlreadyClosed(Exception):
+    pass
+
+class AlreadyExists(Exception):
     pass
 
 class FullDumpMemoryFull(Exception):
