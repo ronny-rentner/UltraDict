@@ -83,7 +83,7 @@ class UltraDictTests(unittest.TestCase):
         import string
         letters = string.ascii_lowercase
         rand_str =   ''.join(random.choice(letters) for i in range(1000))
-        my_dict = UltraDict()
+        my_dict = UltraDict(buffer_size=10_000_000)
         for i in range(100_000):
             my_dict[i] = rand_str
         for i in list(my_dict.keys()):
@@ -113,6 +113,11 @@ class UltraDictTests(unittest.TestCase):
     def test_full_dump(self):
         # TODO
         pass
+
+    def test_longest_name(self):
+        for i in range(5, 50):
+            print('Loop ', i)
+            ultra = UltraDict(name='x' * i)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux")
     def test_cleanup(self):
