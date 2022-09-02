@@ -100,6 +100,16 @@ class UltraDictTests(unittest.TestCase):
         with self.assertRaises(UltraDict.Exceptions.AlreadyExists):
             u2 = UltraDict(name=name, create=True)
 
+    def test_not_already_exists(self):
+        name = 'ultra_already_exists_test'
+        # Ensure we have a clean state before the test
+        UltraDict.unlink_by_name(name, ignore_errors=True)
+        UltraDict.unlink_by_name(name + '_memory', ignore_errors=True)
+
+        with self.assertRaises(UltraDict.Exceptions.CannotAttachSharedMemory):
+            ultra = UltraDict(name=name, create=False)
+
+
     def test_full_dump(self):
         # TODO
         pass
