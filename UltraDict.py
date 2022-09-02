@@ -478,8 +478,8 @@ class UltraDict(collections.UserDict, dict):
             try:
                 self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
             except NameError:
-                self.cleanup()
-                raise Exceptions.MissingDependency("Install `atomics` Python package to use shared_lock=True")
+                #self.cleanup()
+                raise Exceptions.MissingDependency("Install `atomics` Python package to use shared_lock=True") from None
         else:
             self.lock = multiprocessing.RLock()
 
@@ -1012,7 +1012,7 @@ class UltraDict(collections.UserDict, dict):
             if full_dump_name:
                 self.unlink_by_name(full_dump_name, ignore_errors=True)
 
-            if self.recurse:
+            if getattr(self, 'recurse', False):
                 self.unlink_recursed()
 
         if hasattr(self, 'control'):
