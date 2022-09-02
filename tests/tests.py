@@ -91,7 +91,7 @@ class UltraDictTests(unittest.TestCase):
         self.assertEqual(len(my_dict), 0)
 
     def test_already_exists(self):
-        name = 'ultra_already_exists_test'
+        name = 'ultra_test'
         # Ensure we have a clean state before the test
         UltraDict.unlink_by_name(name, ignore_errors=True)
         UltraDict.unlink_by_name(name + '_memory', ignore_errors=True)
@@ -101,7 +101,7 @@ class UltraDictTests(unittest.TestCase):
             u2 = UltraDict(name=name, create=True)
 
     def test_not_already_exists(self):
-        name = 'ultra_already_exists_test'
+        name = 'ultra_test'
         # Ensure we have a clean state before the test
         UltraDict.unlink_by_name(name, ignore_errors=True)
         UltraDict.unlink_by_name(name + '_memory', ignore_errors=True)
@@ -114,10 +114,11 @@ class UltraDictTests(unittest.TestCase):
         # TODO
         pass
 
-    def test_longest_name(self):
-        for i in range(5, 50):
-            print('Loop ', i)
-            ultra = UltraDict(name='x' * i)
+    # Turns out MacOS can only do 24 characters in total
+    #def test_longest_name(self):
+    #    for i in range(5, 50):
+    #        print('Loop ', i)
+    #        ultra = UltraDict(name='x' * i)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux")
     def test_cleanup(self):
