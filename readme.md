@@ -180,14 +180,19 @@ We are factor 100 slower than a real, local Python dict, but still factor 10 fas
 
 ## Parameters
 
-`Ultradict(*arg, name=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=None, recurse=False, **kwargs)`
+`Ultradict(*arg, name=None, create=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=None, recurse=False, recurse_register=None, **kwargs)`
 
-`name`: Name of the shared memory. A random name will be chosen if not set. If a name is given
+`name`: Name of the shared memory. A random name will be chosen if not set. By default, if a name is given
 a new shared memory space is created if it does not exist yet. Otherwise the existing shared
 memory space is attached.
 
-`buffer_size`: Size of the shared memory buffer used for streaming changes of the dict.
+`create`: Can be either `True` or `False` or `None`. If set to `True`, a new UltraDict will be created
+and an exception is thrown if one exists already with the given name. If kept at the default value `None`,
+either a new UltraDict will be created if the name is not taken or an existing UltraDict will be attached.
 
+Setting `create=True` does ensure not accidentally attaching to an existing UltraDict that might be left over.
+
+`buffer_size`: Size of the shared memory buffer used for streaming changes of the dict.
 The buffer size limits the biggest change that can be streamed, so when you use large values or
 deeply nested dicts you might need a bigger buffer. Otherwise, if the buffer is too small,
 it will fall back to a full dump. Creating full dumps can be slow, depending on the size of your dict.
@@ -195,6 +200,8 @@ it will fall back to a full dump. Creating full dumps can be slow, depending on 
 Whenever the buffer is full, a full dump will be created. A new shared memory is allocated just
 big enough for the full dump. Afterwards the streaming buffer is reset.  All other users of the
 dict will automatically load the full dump and continue streaming updates.
+
+(Also see the section [Memory management](#memory-management) below!)
 
 `serializer`: Use a different serialized from the default pickle, e. g. marshal, dill, jsons.
 The module or object provided must support the methods *loads()* and *dumps()*
@@ -214,6 +221,8 @@ it is not visible or accessible to new processes. All existing, still connected 
 dict.
 
 `recurse`: If True, any nested dict objects will be automaticall wrapped in an `UltraDict` allowing transparent nested updates.
+
+`recurse_register`: Has to be either the `name` of an UltraDict or an UltraDict instance itself. Will be used internally to keep track of dynamically created, recursive UltraDicts for proper cleanup when using `recurse=True`. Usually does not have to be set by the user.
 
 ## Memory management
 
