@@ -4,7 +4,7 @@ import Cython.Build
 
 # read the contents of your README file
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+long_description = (this_directory / "readme.md").read_text()
 
 version = '0.0.5'
 

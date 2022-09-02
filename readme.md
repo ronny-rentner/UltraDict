@@ -53,7 +53,7 @@ There are many alternatives:
 In one Python REPL:
 ```python
 Python 3.9.2 on linux
->>> 
+>>>
 >>> from UltraDict import UltraDict
 >>> ultra = UltraDict({ 1:1 }, some_key='some_value')
 >>> ultra
@@ -67,7 +67,7 @@ Python 3.9.2 on linux
 In another Python REPL:
 ```python
 Python 3.9.2 on linux
->>> 
+>>>
 >>> from UltraDict import UltraDict
 >>> # Connect to the shared memory with the name above
 >>> other = UltraDict(name='psm_ad73da69')
@@ -87,7 +87,7 @@ Back in the first Python REPL:
 In one Python REPL:
 ```python
 Python 3.9.2 on linux
->>> 
+>>>
 >>> from UltraDict import UltraDict
 >>> ultra = UltraDict(recurse=True)
 >>> ultra['nested'] = { 'counter': 0 }
@@ -100,7 +100,7 @@ Python 3.9.2 on linux
 In another Python REPL:
 ```python
 Python 3.9.2 on linux
->>> 
+>>>
 >>> from UltraDict import UltraDict
 >>> other = UltraDict(name='psm_0a2713e4')
 >>> other['nested']['counter'] += 1
@@ -121,11 +121,11 @@ with Redis installed from the Debian package and with the default configuration 
 
 ```python
 Python 3.9.2 on linux
->>> 
+>>>
 >>> from UltraDict import UltraDict
 >>> ultra = UltraDict()
 >>> for i in range(10_000): ultra[i] = i
-... 
+...
 >>> len(ultra)
 10000
 >>> ultra[500]
@@ -318,4 +318,3 @@ Other things you can do:
 ## Contributing
 
 Contributions are always welcome!
-
