@@ -10,7 +10,7 @@ sys.path.insert(0, '..')
 
 from UltraDict import UltraDict
 
-import multiprocessing, time, signal
+import multiprocessing, time, signal, subprocess
 
 # For better visibility in console, only count to 100
 count = 100
@@ -39,11 +39,17 @@ def possibly_simulate_crash(d):
         print(f"Simulating crash, kill process name={process.name}, pid={process.pid}, lock={d.lock}")
         # SIGKILL is a hard kill on kernel level leaving the process
         # no time for any cleanup whatsoever
-        os.kill(process.pid, signal.SIGKILL)
+        if hasattr(signal, 'SIGKILL'):
+            os.kill(process.pid, signal.SIGKILL)
+        elif sys.platform == 'win32':
+            subprocess.call(['taskkill', '/F', '/PID',  str(process.pid)])
+        else:
+            raise Exception("Don't know how to kill process to simulate a crash")
         # This message should never print
         print("Killed. (This message should never print!)")
 
-def run(d, target):
+def run(name, target):
+    d = UltraDict(name=name)
     process = multiprocessing.process.current_process()
     print(f"Started process name={process.name}, pid={process.pid} {d.lock}")
 
@@ -112,17 +118,14 @@ def run(d, target):
 if __name__ == '__main__':
 
     ultra = UltraDict(buffer_size=10_000, shared_lock=True)
-    ultra['some-key'] = 'some value'
     ultra['counter'] = 0
-
-    name = ultra.name
-
-    #print(ultra)
 
     processes = []
 
+    ctx = multiprocessing.get_context("spawn")
+
     for x in range(number_of_processes):
-        processes.append(multiprocessing.Process(target=run, name=f"Process {x}", args=[ultra, count]))
+        processes.append(ctx.Process(target=run, name=f"Process {x}", args=[ultra.name, count]))
 
     # These processes should write more or less at the same time
     for p in processes:

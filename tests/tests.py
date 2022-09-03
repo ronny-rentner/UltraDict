@@ -19,7 +19,9 @@ class UltraDictTests(unittest.TestCase):
     def exec(self, filepath):
         ret = subprocess.run([sys.executable, filepath],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        #print(ret.stdout.decode())
         ret.stdout = ret.stdout.replace(b'\r\n', b'\n');
+        self.assertEqual(ret.returncode, 0, f"Running '{filepath}' returned exit code '{ret.returncode}' but expected exit code is '0'")
         return ret
 
     def test_count(self):

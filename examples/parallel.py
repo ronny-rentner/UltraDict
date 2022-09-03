@@ -19,11 +19,11 @@ count = 100_000
 
 def run(name, target, x):
     # Connect to the existing UltraDict by its name
-    d = UltraDict(name=name, shared_lock=True, auto_unlink=False)
+    d = UltraDict(name=name, shared_lock=True)
     for i in range(target):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-        with d.lock(timeout=0.5):
+        with d.lock(timeout=5):
             # Under the lock, we can safely read, modify and write back any values
             # in the shared dict and be sure that nobody else has modified them
             # between reading and writing.

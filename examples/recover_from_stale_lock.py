@@ -12,7 +12,7 @@ sys.path.insert(0, '..')
 
 from UltraDict import UltraDict
 
-import multiprocessing, time, signal
+import multiprocessing, time, signal, subprocess
 
 # For better visibility in console, only count to 100
 count = 100
@@ -27,9 +27,9 @@ simulate_crash_at_target_count = 10
 # Contract between all uses of the UltraDict to never hold the lock
 # longer than this amount of seconds.
 # If any user/process is holding the lock longer, the other processes
-# should be allowed to steal the lock afterchecking that the blocking
-# process is actually dead.
-stale_lock_timeout = 1.0
+# should be allowed to steal the lock (afterchecking that the blocking
+# process is actually dead).
+stale_lock_timeout = 5.0
 
 def possibly_simulate_crash(d):
     """
@@ -41,11 +41,23 @@ def possibly_simulate_crash(d):
         print(f"Simulating crash, kill process name={process.name}, pid={process.pid}, lock={d.lock}")
         # SIGKILL is a hard kill on kernel level leaving the process
         # no time for any cleanup whatsoever
-        os.kill(process.pid, signal.SIGKILL)
+        if hasattr(signal, 'SIGKILL'):
+            os.kill(process.pid, signal.SIGKILL)
+        elif sys.platform == 'win32':
+            subprocess.call(['taskkill', '/F', '/PID',  str(process.pid)])
+        else:
+            raise Exception("Don't know how to kill process to simulate a crash")
+
+        # Wait for the kill to happen
+        time.sleep(1)
+
         # This message should never print
         print("Killed. (This message should never print!)")
 
-def run(d, target):
+        raise Exception("We should never reach this point, because the process should have been killed before.")
+
+def run(name, target):
+    d = UltraDict(name=name)
     process = multiprocessing.process.current_process()
     print(f"Started process name={process.name}, pid={process.pid} {d.lock}")
 
@@ -57,7 +69,7 @@ def run(d, target):
         print("start count: ", d['counter'], ' | ', process.name, process.pid)
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-        with d.lock(1.0, steal=True):
+        with d.lock(timeout=stale_lock_timeout, steal=True):
             if need_to_count := d['counter'] < target:
                 # Under the lock, we can safely read, modify and
                 # write back any values in the shared dict.
@@ -70,17 +82,14 @@ def run(d, target):
 if __name__ == '__main__':
 
     ultra = UltraDict(buffer_size=10_000, shared_lock=True)
-    ultra['some-key'] = 'some value'
     ultra['counter'] = 0
-
-    name = ultra.name
-
-    #print(ultra)
 
     processes = []
 
+    ctx = multiprocessing.get_context("spawn")
+
     for x in range(number_of_processes):
-        processes.append(multiprocessing.Process(target=run, name=f"Process {x}", args=[ultra, count]))
+        processes.append(ctx.Process(target=run, name=f"Process {x}", args=[ultra.name, count]))
 
     # These processes should write more or less at the same time
     for p in processes:

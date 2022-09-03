@@ -96,7 +96,8 @@ class UltraDict(collections.UserDict, dict):
 
         def __init__(self, parent, lock_name, pid_name):
             self.has_lock = 0
-            self.lock_counter_goal = 10_000
+            #self.lock_counter_goal = 10_000
+            self.lock_counter_goal = 1
             self.timeout = None
 
             # `lock_name` contains the name of the attribute that the parent uses
@@ -153,12 +154,14 @@ class UltraDict(collections.UserDict, dict):
 
                     if time_passed >= timeout:
                         if steal_after_timeout:
-                            self.steal_from_dead(from_pid=blocking_pid, release=True)
+                            # If the blocking pid has changed meanwhile, someone else took or stole the lock
+                            if blocking_pid == e.blocking_pid:
+                                self.steal_from_dead(from_pid=blocking_pid, release=True)
                             time_start = None
                             blocking_pid = None
                             process_pid = None
-                        else:
-                            raise Exceptions.CannotAcquireLockTimeout(blocking_pid = e.blocking_pid, timestamp=time_start) from None
+                            continue
+                        raise Exceptions.CannotAcquireLockTimeout(blocking_pid = e.blocking_pid, timestamp=time_start) from None
 
         #@profile
         def acquire(self):
@@ -177,9 +180,8 @@ class UltraDict(collections.UserDict, dict):
                 return True
 
             counter = 0
-            lock_error_pid = 0
+            #lock_error_pid = 0
 
-            # We try to get the lock and busy wait until it's ready
             while True:
                 # We need both, the shared lock to be False and the lock_pid to be 0
                 if self.test_and_inc():
@@ -190,21 +192,12 @@ class UltraDict(collections.UserDict, dict):
 
                     self.pid_remote[:] = self.pid_bytes
                     return True
+                # Oh no, already locked by someone else
                 else:
 
-                    if not counter:
-                        lock_error_pid = int.from_bytes(self.pid_remote, 'little')
-
-                    # Oh no, already locked by someone else
-                    # TODO: Busy wait? Timeout?
+                    time.sleep(0.0000001)
                     counter += 1
                     if counter > self.lock_counter_goal:
-                        # TODO: Record timestamp when starting to wait
-                        #if not self.lock_error_timestamp:
-                        #    self.lock_error_timestamp = time.monotonic()
-
-                        #self.lock_error_pid = int.from_bytes(self.pid_remote, 'little')
-                        #assert self.lock_error_pid > 0, self.status()
                         raise Exceptions.CannotAcquireLock("Failed to acquire lock: ", counter, blocking_pid=self.get_remote_pid())
 
 
@@ -278,12 +271,17 @@ class UltraDict(collections.UserDict, dict):
             """ Check if from_pid is actually a dead process and if yes, steal the lock from it.
                 Optionally, the lock can be directly released after stealing it.
             """
-            import psutil
+
+            try:
+                import psutil
+            except ModuleNotFoundError:
+                raise Exceptions.MissingDependency("Install `psutil` Python package to use shared_lock=True") from None
             # No process must exist anymore with the from_pid or it must at least be dead (ie. zombie status)
             try:
                 p = psutil.Process(from_pid)
+                print('from ', p, p.pid, p.status())
                 if p and p.is_running() and p.status() not in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
-                    raise Exception(f"Trying to steal lock from process that is still alive, something seems really wrong {from_pid} / {self.pid}")
+                    raise Exception(f"Trying to steal lock from process that is still alive, something seems really wrong from_pid={from_pid} pid={self.pid} p={p}")
             except psutil.NoSuchProcess:
                 # If the process is already gone, we cannot find information about it.
                 # It will be safe to steal the lock.
@@ -376,8 +374,6 @@ class UltraDict(collections.UserDict, dict):
             buffer_size = -(buffer_size // -4096) * 4096
             if full_dump_size:
                 full_dump_size = -(full_dump_size // -4096) * 4096
-            if not shared_lock:
-                log.warning('You are running on win32, potentially without locks. Consider setting shared_lock=True')
 
         assert buffer_size < 2**32
 
@@ -515,6 +511,11 @@ class UltraDict(collections.UserDict, dict):
 
         # Load all data from shared memory
         self.apply_update()
+
+        if sys.platform == 'win32':
+            if not shared_lock:
+                log.warning('You are running on win32, potentially without locks. Consider setting shared_lock=True')
+
 
         #if auto_unlink:
         #    atexit.register(self.unlink)
