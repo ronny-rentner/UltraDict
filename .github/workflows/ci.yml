@@ -24,11 +24,25 @@ jobs:
             os: windows-2019
             arch: AMD64
 
+          - name: "win32-x86"
+            os: windows-2022
+            arch: x86
+          - name: "win32-amd64"
+            os: windows-2022
+            arch: AMD64
+
           - name: "macos-x84_64"
-            os: macos-10.15
+            os: macos-11
             arch: x86_64
           - name: "macos-universal2"
-            os: macos-10.15
+            os: macos-11
+
+            arch: universal2
+          - name: "macos-x84_64"
+            os: macos-12
+            arch: x86_64
+          - name: "macos-universal2"
+            os: macos-12
             arch: universal2
 
           - name: "linux-i386"
