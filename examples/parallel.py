@@ -23,7 +23,7 @@ def run(name, target, x):
     for i in range(target):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-        with d.lock:
+        with d.lock(timeout=0.5):
             # Under the lock, we can safely read, modify and write back any values
             # in the shared dict and be sure that nobody else has modified them
             # between reading and writing.
@@ -42,18 +42,24 @@ if __name__ == '__main__':
 
     ctx = multiprocessing.get_context("spawn")
 
-    p1 = ctx.Process(target=run, name="Process 1", args=[name, count//2, 1])
-    p2 = ctx.Process(target=run, name="Process 2", args=[name, count//2, 2])
+    p1 = ctx.Process(target=run, name="Process 1", args=[name, count//4, 1])
+    p2 = ctx.Process(target=run, name="Process 2", args=[name, count//4, 2])
+    p3 = ctx.Process(target=run, name="Process 3", args=[name, count//4, 3])
+    p4 = ctx.Process(target=run, name="Process 4", args=[name, count//4, 4])
 
     # These processes should write more or less at the same time
     p1.start()
     p2.start()
+    p3.start()
+    p4.start()
 
-    print ("Started 2 processes..")
+    print ("Started 4 processes..")
 
     p1.join()
     p2.join()
+    p3.join()
+    p4.join()
 
-    print ("Joined 2 processes")
+    print ("Joined 4 processes")
 
     print("Counter: ", ultra['counter'], ' == ', count)
