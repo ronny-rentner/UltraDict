@@ -162,7 +162,7 @@ class UltraDict(collections.UserDict, dict):
 
 
         #@profile
-        def acquire(self, block=True, sleep_time=0.000001):
+        def acquire(self, block=True, sleep_time=0.000001, timeout=None):
             # If we already own the lock, just increment our counter
             if self.has_lock:
                 self.has_lock += 1

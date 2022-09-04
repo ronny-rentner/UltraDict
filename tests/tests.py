@@ -24,6 +24,12 @@ class UltraDictTests(unittest.TestCase):
         self.assertEqual(ret.returncode, 0, f"Running '{filepath}' returned exit code '{ret.returncode}' but expected exit code is '0'")
         return ret
 
+    def exec_show_output(self, ret):
+        return f"\n\n{ret}\n\nOutput:\n{ret.stdout.decode()}\n"
+
+    def assertReturnCode(self, ret, target=0):
+        return self.assertEqual(ret.returncode, target, self.exec_show_output(ret))
+
     def test_count(self):
         ultra = UltraDict()
         other = UltraDict(name=ultra.name)
@@ -147,26 +153,26 @@ class UltraDictTests(unittest.TestCase):
     def test_example_simple(self):
         filename = "examples/simple.py"
         ret = self.exec(filename)
-        self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout.splitlines()[-1], b"Length:  100000  ==  100000  ==  100000")
+        self.assertReturnCode(ret)
+        self.assertEqual(ret.stdout.splitlines()[-1], b"Length:  100000  ==  100000  ==  100000", self.exec_show_output(ret))
 
     def test_example_parallel(self):
         filename = "examples/parallel.py"
         ret = self.exec(filename)
-        self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout.splitlines()[-1], b'Counter:  100000  ==  100000')
+        self.assertReturnCode(ret)
+        self.assertEqual(ret.stdout.splitlines()[-1], b'Counter:  100000  ==  100000', self.exec_show_output(ret))
 
     def test_example_nested(self):
         filename = "examples/nested.py"
         ret = self.exec(filename)
-        self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout.splitlines()[-1], b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}")
+        self.assertReturnCode(ret)
+        self.assertEqual(ret.stdout.splitlines()[-1], b"{'nested': {'deeper': {0: 2}}}  ==  {'nested': {'deeper': {0: 2}}}", self.exec_show_output(ret))
 
     def test_example_recover_from_stale_lock(self):
         filename = "examples/recover_from_stale_lock.py"
         ret = self.exec(filename)
-        self.assertEqual(ret.returncode, 0, f'Running {filename} did return with an error.')
-        self.assertEqual(ret.stdout.splitlines()[-1], b"Counter: 100 == 100")
+        self.assertReturnCode(ret)
+        self.assertEqual(ret.stdout.splitlines()[-1], b"Counter: 100 == 100", self.exec_show_output(ret))
 
 
 if __name__ == '__main__':
