@@ -211,6 +211,8 @@ they need a shared lock to synchronize and not overwrite each other's changes. S
 They rely on the [atomics](https://github.com/doodspav/atomics) package for atomic locks. By default,
 UltraDict will use a multiprocessing.RLock() instead which works well in fork context and is much faster.
 
+(Also see the section [Locking](#locking) below!)
+
 `full_dump_size`: If set, uses a static full dump memory instead of dynamically creating it. This
 might be necessary on Windows depending on your write behaviour. On Windows, the full dump memory goes
 away if the process goes away that had created the full dump. Thus you must plan ahead which processes might
@@ -250,9 +252,45 @@ Given the above 3 cases, you need to balance the size of your data and your writ
 
 On the other hand, if for example you only change back and forth the value of one single key in your `UltraDict`, it might be useless to process a stream of all these back and forth changes. It might be much more efficient to simply do one full dump which might be very small because it only contains one key.
 
+## Locking
 
+Every UltraDict instance has a `lock` attribute which is either a [multiprocessing.RLock](https://docs.python.org/3/library/multiprocessing.html#multiprocessing.RLock) or a `UltraDict.SharedLock` if you set `shared_lock=True` when creating the UltraDict.
 
+RLock is the fastest locking method that is used by default but you can only use it if you fork your child processes. Forking is the default on Linux systems. In contrast, on Windows systems, forking is not available and Python will automatically use the spawn method when creating child processes. You should then use the parameter `shared_lock=True` when using UltraDict. This requires that the external [atomics](https://github.com/doodspav/atomics) package is installed.
 
+### UltraDict.SharedLock with shared_lock=True
+```python
+ultra = UltraDict(shared_lock=True)
+
+with ultra.lock:
+	ultra['counter']++
+
+# The same as above with all default parameters
+with ultra.lock(timeout=None, block=True, steal=False, sleep_time=0.000001):
+	ultra['counter']++
+
+# Busy wait, will result in 99 % CPU, fastest option
+# Ideally number of processes using the UltraDict should be < number of CPUs
+with ultra.lock(sleep_time=0):
+	ultra['counter']++
+
+try:
+	result = ultra.lock.acquire(block=False)
+except UltraDict.Exceptions.CannotAcquireLock as e:
+	print(f'Process with PID {e.blocking_pid} is holding the lock')
+finally:
+	ultra.lock.release()
+
+try:
+	with ultra.lock(timeout=1.5):
+		ultra['counter']++
+except UltraDict.Exceptions.CannotAcquireLockTimeout:
+	print('Stale lock?')
+
+with ultra.lock(timeout=1.5, steal_after_timeout=True):
+	ultra['counter']++
+
+```
 
 
 ## Advanced usage

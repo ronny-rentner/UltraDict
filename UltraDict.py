@@ -91,7 +91,7 @@ class UltraDict(collections.UserDict, dict):
 
         __slots__ = 'parent', 'has_lock',  'ctx', 'lock_atomic', 'lock_remote', \
             'pid', 'pid_bytes', 'pid_remote', 'pid_remote_ctx', 'pid_remote_atomic', \
-            'lock_error_pid', 'timeout', 'steal_after_timeout'
+            'lock_error_pid', 'timeout', 'steal_after_timeout', 'sleep_time'
 
         def __init__(self, parent, lock_name, pid_name):
             self.has_lock = 0
@@ -166,7 +166,7 @@ class UltraDict(collections.UserDict, dict):
             # If we already own the lock, just increment our counter
             if self.has_lock:
                 self.has_lock += 1
-                return self
+                return True
 
             while True:
                 # We need both, the shared lock to be False and the lock_pid to be 0
@@ -179,7 +179,7 @@ class UltraDict(collections.UserDict, dict):
                     assert self.pid_remote[0:4] == b'\x00\x00\x00\x00'
 
                     self.pid_remote[:] = self.pid_bytes
-                    return self
+                    return True
 
                 # If set to 0, we practically have a busy wait
                 if sleep_time:
@@ -232,6 +232,7 @@ class UltraDict(collections.UserDict, dict):
         def reset_timeout(self):
             self.timeout = None
             self.steal_after_timeout = False
+            self.sleep_time = False
 
         def steal(self, from_pid=0, release=False):
             if self.has_lock:
@@ -321,7 +322,7 @@ class UltraDict(collections.UserDict, dict):
 
         def __enter__(self):
             if self.timeout:
-                self.acquire_with_timeout(timeout=self.timeout, steal_after_timeout=self.steal_after_timeout)
+                self.acquire_with_timeout(timeout=self.timeout, steal_after_timeout=self.steal_after_timeout, sleep_time=self.sleep_time)
                 self.reset_timeout()
             else:
                 self.acquire()
@@ -332,11 +333,12 @@ class UltraDict(collections.UserDict, dict):
             # Make sure exceptions are not ignored
             return False
 
-        def __call__(self, timeout=None, steal=False, block=True):
+        def __call__(self, timeout=None, steal=False, block=True, sleep_time=0.000001):
             if timeout is not None:
                 self.timeout = timeout
 
             self.steal_after_timeout = steal
+            self.sleep_time = sleep_time
 
             return self
 
