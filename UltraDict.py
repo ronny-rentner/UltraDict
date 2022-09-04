@@ -91,13 +91,10 @@ class UltraDict(collections.UserDict, dict):
 
         __slots__ = 'parent', 'has_lock',  'ctx', 'lock_atomic', 'lock_remote', \
             'pid', 'pid_bytes', 'pid_remote', 'pid_remote_ctx', 'pid_remote_atomic', \
-            'lock_counter_goal', \
             'lock_error_pid', 'timeout', 'steal_after_timeout'
 
         def __init__(self, parent, lock_name, pid_name):
             self.has_lock = 0
-            #self.lock_counter_goal = 10_000
-            self.lock_counter_goal = 1
             self.timeout = None
 
             # `lock_name` contains the name of the attribute that the parent uses
@@ -134,13 +131,13 @@ class UltraDict(collections.UserDict, dict):
             self.pid = multiprocessing.current_process().pid
             self.pid_bytes = self.pid.to_bytes(4, 'little')
 
-        def acquire_with_timeout(self, timeout=1.0, steal_after_timeout=False):
+        def acquire_with_timeout(self, timeout=1.0, steal_after_timeout=False, sleep_time=0.000001):
             time_start = None
             blocking_pid = None
             process_pid = None
             while True:
                 try:
-                    return self.acquire()
+                    return self.acquire(block=False, sleep_time=sleep_time)
                 except Exceptions.CannotAcquireLock as e:
                     if not time_start:
                         time_start = e.timestamp
@@ -163,43 +160,35 @@ class UltraDict(collections.UserDict, dict):
                             continue
                         raise Exceptions.CannotAcquireLockTimeout(blocking_pid = e.blocking_pid, timestamp=time_start) from None
 
-        #@profile
-        def acquire(self):
-            #log.debug("Acquire lock")
 
+        #@profile
+        def acquire(self, block=True, sleep_time=0.000001):
             # If we already own the lock, just increment our counter
             if self.has_lock:
-                #log.debug("Already got lock", self.has_lock)
                 self.has_lock += 1
-
-
-                #ipid = int.from_bytes(self.pid_remote, 'little')
-                #if ipid != self.pid:
-                #    raise Exception(f"Error, '{ipid}' stole our lock '{self.pid}'")
-
-                return True
-
-            counter = 0
-            #lock_error_pid = 0
+                return self
 
             while True:
                 # We need both, the shared lock to be False and the lock_pid to be 0
                 if self.test_and_inc():
-                    self.has_lock += 1
+
+                    assert self.has_lock == 0
+                    self.has_lock = 1
 
                     # If nobody had owned the lock, so the remote pid should be zero
                     assert self.pid_remote[0:4] == b'\x00\x00\x00\x00'
 
                     self.pid_remote[:] = self.pid_bytes
-                    return True
-                # Oh no, already locked by someone else
-                else:
+                    return self
 
-                    time.sleep(0.0000001)
-                    counter += 1
-                    if counter > self.lock_counter_goal:
-                        raise Exceptions.CannotAcquireLock("Failed to acquire lock: ", counter, blocking_pid=self.get_remote_pid())
+                # If set to 0, we practically have a busy wait
+                if sleep_time:
+                    # On Python < 3.10, this smallest possible time is actually rather big,
+                    #  maybe around 10 ms, depending on your CPU.
+                    time.sleep(sleep_time)
 
+                if not block:
+                    raise Exceptions.CannotAcquireLock(blocking_pid=self.get_remote_pid())
 
         #@profile
         def test_and_inc(self):

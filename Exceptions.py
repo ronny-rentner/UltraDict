@@ -25,7 +25,7 @@ class CannotAttachSharedMemory(Exception):
 
 class CannotAcquireLock(Exception):
     def __init__(self, *args, blocking_pid=0, timestamp=None, **kwargs):
-        super().__init__(*args, *kwargs)
+        super().__init__('Cannot acquire lock', *args, *kwargs)
         self.blocking_pid = blocking_pid
         self.timestamp = timestamp or time.monotonic()
 

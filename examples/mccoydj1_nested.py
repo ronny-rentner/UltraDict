@@ -43,7 +43,7 @@ if __name__ == '__main__':
     # Make sure the UltraDict with name='ultra6' does not exist,
     # it could be left over from a previous crash
 
-    UltraDict.unlink_by_name(name, ignore_error=True)
+    UltraDict.unlink_by_name(name, ignore_errors=True)
 
     ultra = UltraDict({'banned': { '127.0.0.1': True }}, name=name, buffer_size=10_000, shared_lock=True, recurse=True)
 

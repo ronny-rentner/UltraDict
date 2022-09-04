@@ -111,6 +111,8 @@ class UltraDictTests(unittest.TestCase):
         with self.assertRaises(UltraDict.Exceptions.CannotAttachSharedMemory):
             ultra = UltraDict(name=name, create=False)
 
+    def test_lock_blocking(self):
+        pass
 
     def test_full_dump(self):
         # TODO
