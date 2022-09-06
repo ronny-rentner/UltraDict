@@ -116,7 +116,7 @@ Back in the first Python REPL:
 
 Lets compare a classical Python dict, UltraDict, multiprocessing.Manager and Redis.
 
-Note that this comparison is not a real life workload. It was exectured on Debian Linux 11
+Note that this comparison is not a real life workload. It was executed on Debian Linux 11
 with Redis installed from the Debian package and with the default configuration of Redis.
 
 ```python
@@ -328,6 +328,20 @@ except UltraDict.Exceptions.CannotAcquireLockTimeout:
 with ultra.lock(timeout=1.5, steal_after_timeout=True):
 	ultra['counter']++
 
+```
+
+## Explicit cleanup
+
+Sometimes, when your program crashes, no cleanup happens and you might have a corrupted shared memeory buffer that only goes away if you manually delete it.
+
+On Linux/Unix systems, those buffers usually live in a memory based filesystem in the folder `/dev/shm`. You can simply delete the files there.
+
+Another way to do this in code is like this:
+```python
+# Unlink both shared memory buffers possibly used by UltraDict
+name = 'my-dict-name'
+UltraDict.unlink_by_name(name, ignore_errors=True)
+UltraDict.unlink_by_name(f'{name}_memory', ignore_errors=True)
 ```
 
 ## Advanced usage
