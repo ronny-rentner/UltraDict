@@ -1,15 +1,17 @@
 [build-system]
-requires        = ["setuptools", "wheel", "cython", "pylint"]
+requires        = ["setuptools", "wheel", "cython", "pylint", "psutil"]
 build-backend   = "setuptools.build_meta"
 
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 140
 
-# Many false positives with pylint unfortuantely and also really wrong things like
-# "unidiomatic-typecheck" or "import-outside-toplevel"
+# Many false positives and wrong assumptoins with pylint unfortuantely and
+# also really wrong things like "unidiomatic-typecheck" or "import-outside-toplevel"
 disable         = ["missing-module-docstring", "missing-class-docstring", "missing-function-docstring",
                    "unidiomatic-typecheck", "multiple-imports", "fixme", "no-else-return", "unused-argument",
-		   "invalid-name", "import-outside-toplevel", "no-self-use", "method-hidden"]
+		   "invalid-name", "import-outside-toplevel", "no-self-use", "method-hidden", "line-too-long",
+		   "raise-missing-from", "redefined-builtin", "logging-too-many-args", "logging-fstring-interpolation",
+		   "deprecated-method", "inconsistent-return-statements", "too-many-instance-attributes"]
 
 [tool.pylint.'DESIGN']
 max-attributes  = 22
