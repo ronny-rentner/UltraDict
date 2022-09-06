@@ -1,3 +1,6 @@
+# In this example two processes will write to an UltraDict
+# with maximum speed.
+
 import sys
 sys.path.insert(0, '..')
 sys.path.insert(0, '../..')

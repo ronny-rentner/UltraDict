@@ -31,7 +31,7 @@ class CannotAcquireLock(Exception):
 
 class CannotAcquireLockTimeout(CannotAcquireLock):
     def __init__(self, *args, time_passed=None, **kwargs):
-        super().__init__(*args, *kwargs)
+        super().__init__(*args, **kwargs)
         self.time_passed = time_passed
 
 class ParameterMismatch(Exception):

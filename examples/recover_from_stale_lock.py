@@ -24,8 +24,7 @@ number_of_processes = 5
 # simulate a hard crash (using SIGKILL) and a stale lock
 simulate_crash_at_target_count = 10
 
-# Contract between all uses of the UltraDict to never hold the lock
-# longer than this amount of seconds.
+# Contract to never hold the lock longer than this amount of seconds.
 # If any user/process is holding the lock longer, the other processes
 # should be allowed to steal the lock (afterchecking that the blocking
 # process is actually dead).
@@ -69,7 +68,7 @@ def run(name, target):
         print("start count: ", d['counter'], ' | ', process.name, process.pid)
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-        with d.lock(timeout=stale_lock_timeout, steal=True):
+        with d.lock(timeout=stale_lock_timeout, steal_after_timeout=True):
             if need_to_count := d['counter'] < target:
                 # Under the lock, we can safely read, modify and
                 # write back any values in the shared dict.

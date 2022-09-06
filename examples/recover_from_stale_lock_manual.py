@@ -22,8 +22,7 @@ number_of_processes = 5
 # simulate a hard crash (using SIGKILL) and a stale lock
 simulate_crash_at_target_count = 10
 
-# Contract between all uses of the UltraDict to never hold the lock
-# longer than this amount of seconds.
+# Contract to never hold the lock longer than this amount of seconds.
 # If any user/process is holding the lock longer, the other processes
 # should be allowed to steal the lock afterchecking that the blocking
 # process is actually dead.
@@ -67,7 +66,7 @@ def run(name, target):
         try:
             # Adding 1 to the counter is unfortunately not an atomic operation in Python,
             # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
-            with d.lock:
+            with d.lock(block=False):
                 if d['counter'] < target:
                     # Under the lock, we can safely read, modify and
                     # write back any values in the shared dict
@@ -93,18 +92,20 @@ def run(name, target):
             # We should not be the blocking pid
             assert process.pid != blocking_pid
 
+            #time.sleep(0.1)
             time_passed = time.monotonic() - time_start
 
             # If the lock is stale for more than 1 second (plus the time for the initial attempt),
             # we will steal it.
             if time_passed >= stale_lock_timeout:
+
                 print(process.name, process.pid, f"cannot acquire lock, more than {stale_lock_timeout} s have passed, lock must be stale")
 
                 # The lock blocking pid cannot not be our pid, after all we could not acquire the lock
                 assert process.pid != blocking_pid
 
                 # Steal lock and release it so on the next loop iteration, we or some other process can get it
-                print(f"Process {process.name} ({process.pid}) is stealing lock from {blocking_pid}")
+                print(f"Process {process.name} ({process.pid}) is stealing and releasing lock from {blocking_pid}")
                 # steal_from_dead() ensures the process we are stealing from is actually dead
                 result = d.lock.steal_from_dead(from_pid=blocking_pid, release=True)
                 print(f"Lock stealing result: {result} {d.lock.status()}")

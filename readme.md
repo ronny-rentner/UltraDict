@@ -178,6 +178,43 @@ We are factor 15 slower than a real, local dict, but way faster than using a Man
 
 We are factor 100 slower than a real, local Python dict, but still factor 10 faster than using a Manager and much fast than Redis.
 
+### Testing performance
+
+There is an automated performance test in `tests/performance/performance.py`. If you run it, you get something like this:
+
+```bash
+python ./tests/performance/performance.py
+
+Testing Performance with 1000000 operations each
+
+Redis (writes) = 24,351 ops per second
+Redis (reads) = 30,466 ops per second
+Python MPM dict (writes) = 19,371 ops per second
+Python MPM dict (reads) = 22,290 ops per second
+Python dict (writes) = 16,413,569 ops per second
+Python dict (reads) = 16,479,191 ops per second
+UltraDict (writes) = 479,860 ops per second
+UltraDict (reads) = 2,337,944 ops per second
+UltraDict (shared_lock=True) (writes) = 41,176 ops per second
+UltraDict (shared_lock=True) (reads) = 1,518,652 ops per second
+
+Ranking:
+  writes:
+    Python dict = 16,413,569 (factor 1.0)
+    UltraDict = 479,860 (factor 34.2)
+    UltraDict (shared_lock=True) = 41,176 (factor 398.62)
+    Redis = 24,351 (factor 674.04)
+    Python MPM dict = 19,371 (factor 847.33)
+  reads:
+    Python dict = 16,479,191 (factor 1.0)
+    UltraDict = 2,337,944 (factor 7.05)
+    UltraDict (shared_lock=True) = 1,518,652 (factor 10.85)
+    Redis = 30,466 (factor 540.9)
+    Python MPM dict = 22,290 (factor 739.31)
+```
+
+I am interested in extending the performance testing to other solutions (like sqlite, memcached, etc.) and to more complex use cases with multiple processes working in parallel.
+
 ## Parameters
 
 `Ultradict(*arg, name=None, create=None, buffer_size=10000, serializer=pickle, shared_lock=False, full_dump_size=None, auto_unlink=None, recurse=False, recurse_register=None, **kwargs)`
@@ -254,11 +291,13 @@ On the other hand, if for example you only change back and forth the value of on
 
 ## Locking
 
-Every UltraDict instance has a `lock` attribute which is either a [multiprocessing.RLock](https://docs.python.org/3/library/multiprocessing.html#multiprocessing.RLock) or a `UltraDict.SharedLock` if you set `shared_lock=True` when creating the UltraDict.
+Every UltraDict instance has a `lock` attribute which is either a [multiprocessing.RLock](https://docs.python.org/3/library/multiprocessing.html#multiprocessing.RLock) or an `UltraDict.SharedLock` if you set `shared_lock=True` when creating the UltraDict.
 
-RLock is the fastest locking method that is used by default but you can only use it if you fork your child processes. Forking is the default on Linux systems. In contrast, on Windows systems, forking is not available and Python will automatically use the spawn method when creating child processes. You should then use the parameter `shared_lock=True` when using UltraDict. This requires that the external [atomics](https://github.com/doodspav/atomics) package is installed.
+RLock is the fastest locking method that is used by default but you can only use it if you fork your child processes. Forking is the default on Linux systems.
 
-### UltraDict.SharedLock with shared_lock=True
+In contrast, on Windows systems, forking is not available and Python will automatically use the spawn method when creating child processes. You should then use the parameter `shared_lock=True` when using UltraDict. This requires that the external [atomics](https://github.com/doodspav/atomics) package is installed.
+
+### How to use the locking?
 ```python
 ultra = UltraDict(shared_lock=True)
 
@@ -269,17 +308,16 @@ with ultra.lock:
 with ultra.lock(timeout=None, block=True, steal=False, sleep_time=0.000001):
 	ultra['counter']++
 
-# Busy wait, will result in 99 % CPU, fastest option
+# Busy wait, will result in 99 % CPU usage, fastest option
 # Ideally number of processes using the UltraDict should be < number of CPUs
 with ultra.lock(sleep_time=0):
 	ultra['counter']++
 
 try:
 	result = ultra.lock.acquire(block=False)
+	ultra.lock.release()
 except UltraDict.Exceptions.CannotAcquireLock as e:
 	print(f'Process with PID {e.blocking_pid} is holding the lock')
-finally:
-	ultra.lock.release()
 
 try:
 	with ultra.lock(timeout=1.5):
@@ -291,7 +329,6 @@ with ultra.lock(timeout=1.5, steal_after_timeout=True):
 	ultra['counter']++
 
 ```
-
 
 ## Advanced usage
 

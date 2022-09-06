@@ -34,7 +34,7 @@ try:
     import ultraimport
     Exceptions = ultraimport('__dir__/Exceptions.py')
     try:
-        log = ultraimport('__dir__/utils/log.py', package=1).log
+        log = ultraimport('__dir__/utils/log.py', 'log', package=1)
         log.log_targets = [ sys.stderr ]
     except ultraimport.ResolveImportError:
         import logging as log
@@ -91,11 +91,11 @@ class UltraDict(collections.UserDict, dict):
 
         __slots__ = 'parent', 'has_lock',  'ctx', 'lock_atomic', 'lock_remote', \
             'pid', 'pid_bytes', 'pid_remote', 'pid_remote_ctx', 'pid_remote_atomic', \
-            'lock_error_pid', 'timeout', 'steal_after_timeout', 'sleep_time'
+            'next_acquire_parameters'
 
         def __init__(self, parent, lock_name, pid_name):
             self.has_lock = 0
-            self.timeout = None
+            self.next_acquire_parameters = ()
 
             # `lock_name` contains the name of the attribute that the parent uses
             # to store the memory view on the remote lock, so `self.lock_remote` is
@@ -105,9 +105,6 @@ class UltraDict(collections.UserDict, dict):
 
             self.init_pid()
 
-            # When we fail to acquire a lock, we store the pid of the process that
-            # currently holds the lock
-            self.lock_error_pid = 0
             try:
                 self.ctx = atomics.atomicview(buffer=self.lock_remote[0:1], atype=atomics.BYTES)
                 self.pid_remote_ctx = atomics.atomicview(buffer=self.pid_remote[0:4], atype=atomics.BYTES)
@@ -131,10 +128,10 @@ class UltraDict(collections.UserDict, dict):
             self.pid = multiprocessing.current_process().pid
             self.pid_bytes = self.pid.to_bytes(4, 'little')
 
-        def acquire_with_timeout(self, timeout=1.0, steal_after_timeout=False, sleep_time=0.000001):
+        def acquire_with_timeout(self, block=True, sleep_time=0.000001, timeout=1.0, steal_after_timeout=False):
+            # The block parameter will be ignored
             time_start = None
             blocking_pid = None
-            process_pid = None
             while True:
                 try:
                     return self.acquire(block=False, sleep_time=sleep_time)
@@ -142,10 +139,9 @@ class UltraDict(collections.UserDict, dict):
                     if not time_start:
                         time_start = e.timestamp
                         blocking_pid = e.blocking_pid
-                        process_pid = multiprocessing.process.current_process().pid
 
                     # We should not be the blocking pid
-                    assert process_pid != blocking_pid
+                    assert blocking_pid != self.pid
 
                     time_passed = time.monotonic() - time_start
 
@@ -156,17 +152,19 @@ class UltraDict(collections.UserDict, dict):
                                 self.steal_from_dead(from_pid=blocking_pid, release=True)
                             time_start = None
                             blocking_pid = None
-                            process_pid = None
                             continue
                         raise Exceptions.CannotAcquireLockTimeout(blocking_pid = e.blocking_pid, timestamp=time_start) from None
 
 
         #@profile
-        def acquire(self, block=True, sleep_time=0.000001, timeout=None):
+        def acquire(self, block=True, sleep_time=0.000001, timeout=None, steal_after_timeout=False):
             # If we already own the lock, just increment our counter
             if self.has_lock:
                 self.has_lock += 1
                 return True
+
+            if timeout:
+                return self.acquire_with_timeout(sleep_time=sleep_time, timeout=timeout, steal_after_timeout=steal_after_timeout)
 
             while True:
                 # We need both, the shared lock to be False and the lock_pid to be 0
@@ -228,11 +226,8 @@ class UltraDict(collections.UserDict, dict):
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
-
-        def reset_timeout(self):
-            self.timeout = None
-            self.steal_after_timeout = False
-            self.sleep_time = False
+        def reset_acquire_parameters(self):
+            self.next_acquire_parameters = ()
 
         def steal(self, from_pid=0, release=False):
             if self.has_lock:
@@ -269,7 +264,6 @@ class UltraDict(collections.UserDict, dict):
             # No process must exist anymore with the from_pid or it must at least be dead (ie. zombie status)
             try:
                 p = psutil.Process(from_pid)
-                print('from ', p, p.pid, p.status())
                 if p and p.is_running() and p.status() not in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
                     raise Exception(f"Trying to steal lock from process that is still alive, something seems really wrong from_pid={from_pid} pid={self.pid} p={p}")
             except psutil.NoSuchProcess:
@@ -321,11 +315,8 @@ class UltraDict(collections.UserDict, dict):
             return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={int.from_bytes(self.lock_remote, 'little')}, has_lock={self.has_lock}, pid={self.pid}), pid_remote={int.from_bytes(self.pid_remote, 'little')}"
 
         def __enter__(self):
-            if self.timeout:
-                self.acquire_with_timeout(timeout=self.timeout, steal_after_timeout=self.steal_after_timeout, sleep_time=self.sleep_time)
-                self.reset_timeout()
-            else:
-                self.acquire()
+            self.acquire(*self.next_acquire_parameters)
+            self.reset_acquire_parameters()
             return self
 
         def __exit__(self, type, value, traceback):
@@ -333,12 +324,8 @@ class UltraDict(collections.UserDict, dict):
             # Make sure exceptions are not ignored
             return False
 
-        def __call__(self, timeout=None, steal=False, block=True, sleep_time=0.000001):
-            if timeout is not None:
-                self.timeout = timeout
-
-            self.steal_after_timeout = steal
-            self.sleep_time = sleep_time
+        def __call__(self, block=True, timeout=None, sleep_time=0.000001, steal_after_timeout=False):
+            self.next_acquire_parameters = ( block, timeout, sleep_time, steal_after_timeout )
 
             return self
 
