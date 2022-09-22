@@ -23,12 +23,15 @@ def run(name, target, x):
     for i in range(target):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
+        print(f'{name} trying to get the lock')
         with d.lock:
+            print(f'{name} got the lock')
             # Under the lock, we can safely read, modify and write back any values
             # in the shared dict and be sure that nobody else has modified them
             # between reading and writing.
             d['counter'] += 1
             #print("counter: ", d['counter'], i, x)
+            print(f'{name} will release the lock')
 
 if __name__ == '__main__':
 

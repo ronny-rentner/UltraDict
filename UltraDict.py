@@ -177,6 +177,7 @@ class UltraDict(collections.UserDict, dict):
                     assert self.pid_remote[0:4] == b'\x00\x00\x00\x00'
 
                     self.pid_remote[:] = self.pid_bytes
+                    #print(f'ACQ: {self.status()}')
                     return True
 
                 # If set to 0, we practically have a busy wait
@@ -198,21 +199,22 @@ class UltraDict(collections.UserDict, dict):
 
         #@profile
         def test_and_dec(self):
+            #print(f'DEC0: {self.status()}', self.lock_atomic)
             old = self.lock_atomic.exchange(b'\x00')
+            #print(f'DEC1: {self.status()} {old}')
             if old != b'\x01':
-                raise Exception("Failed to release lock")
+                raise Exception(f"Failed to release lock: {old}, {self.status()}")
             return True
 
         #@profile
         def release(self, *args):
             #log.debug("Release lock, lock={}", self.has_lock)
             if self.has_lock > 0:
-                owner = int.from_bytes(self.pid_remote, 'little')
-                if owner != self.pid:
-                    raise Exception(f"Our lock for pid {self.pid} was stolen by pid {owner}")
+                assert self.pid == self.get_remote_pid(), f"Our lock for pid {self.pid} was stolen by pid {self.get_remote_pid()}"
                 self.has_lock -= 1
                 # Last local lock released, release shared lock
                 if not self.has_lock:
+                    #print(f'REL: {self.status()}')
                     self.pid_remote[:] = b'\x00\x00\x00\x00'
                     self.test_and_dec()
                 #log.debug("Relased lock, lock={} pid_remote={}", self.has_lock, int.from_bytes(self.pid_remote, 'little'))
