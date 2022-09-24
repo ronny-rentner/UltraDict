@@ -21,7 +21,7 @@ main = "https://github.com/ronny-rentner/ultradict"
 
 
 [project.optional-dependencies]
-tests = ["ultraimport"]
+tests = ["ultraimport", "redis"]
 
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 140
