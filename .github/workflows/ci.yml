@@ -82,7 +82,6 @@ jobs:
           pip install .[tests]
           # Manually install pylint as long as we don't build the wheels
           #pip install pylint
-          ls /opt/hostedtoolcache/Python/3.8.13/x64/lib/python3.8/site-packages/UltraDict/
       - name: Run unit tests
         run: python -m unittest
       - name: Run performance tests
