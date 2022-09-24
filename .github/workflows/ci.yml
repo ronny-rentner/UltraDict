@@ -77,7 +77,6 @@ jobs:
         run: python -c "import sys; print(sys.version)"
       - name: Install dependencies
         run: |
-          ls -R /lib
           python -m pip install --upgrade pip
           # Install optional dependencies for running the tests
           pip install .[tests]
