@@ -2,6 +2,9 @@
 requires        = ["setuptools", "setuptools-scm", "wheel", "cython", "pylint", "psutil"]
 build-backend   = "setuptools.build_meta"
 
+[project.optional-dependencies]
+tests = ["ultraimport"]
+
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 140
 

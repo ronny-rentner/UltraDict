@@ -131,6 +131,8 @@ class UltraDict(collections.UserDict, dict):
 
             return False
 
+        def cleanup(self):
+            del self.lock
 
     class SharedLock():
         """
@@ -576,13 +578,11 @@ class UltraDict(collections.UserDict, dict):
 
     def del_remotes(self):
         """
-        Delete all instance attributes whose name ends with '_remote' from
-        the instance for cleanup. This shall ensure there are no
-        reference left to shared memory views so proper cleanup can happen.
+        Delete all instance attributes of type memoryview from the instance for cleanup.
+        This shall ensure there are no reference left so proper cleanup can happen.
         """
-        remotes = [ r for r in dir(self) if r.endswith('_remote') ]
-        for r in remotes:
-            if hasattr(self, r):
+        for r in dir(self):
+            if hasattr(self, r) and type(getattr(self, r)) == memoryview:
                 delattr(self, r)
 
     def __reduce__(self):

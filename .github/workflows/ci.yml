@@ -77,15 +77,15 @@ jobs:
         run: python -c "import sys; print(sys.version)"
       - name: Install dependencies
         run: |
+          ls -R /lib
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          # Manually install psutils as long as we don't build the wheels
-          pip install psutil
+          # Install optional dependencies for running the tests
+          pip install .[tests]
           # Manually install pylint as long as we don't build the wheels
           #pip install pylint
       - name: Run unit tests
         run: python -m unittest
       - name: Run performance tests
         run: python ./tests/performance/performance.py
-          #- name: Run pylint
-          #run: pylint UltraDict.py
+      #- name: Run pylint
+      #run: pylint UltraDict.py
