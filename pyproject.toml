@@ -2,6 +2,24 @@
 requires        = ["setuptools", "setuptools-scm", "wheel", "cython", "pylint", "psutil"]
 build-backend   = "setuptools.build_meta"
 
+[project]
+name = 'UltraDict'
+readme = "readme.md"
+license = { file = "license.txt" }
+version = "0.0.6"
+dependencies= [
+    'psutil',
+    'atomics'
+]
+
+[[authors]]
+name = "Ronny Rentner"
+email = "ultradict.code@ronny-rentner.de"
+
+[project.urls]
+main = "https://github.com/ronny-rentner/ultradict"
+
+
 [project.optional-dependencies]
 tests = ["ultraimport"]
 
