@@ -3,26 +3,23 @@
 #
 # In this example we use the shared_lock=True parameter.
 # This way of shared locking is safe accross independent
-# processes but it is slower than using the built-in default
-# locking method using `multiprocessing.RLock()`.
+# processes on all operting systems but it is slower than
+# using the built-in default locking method using `multiprocessing.RLock()`.
 #
 # UltraDict uses the atomics package internally for shared locking.
 
-#import sys
-#sys.path.insert(0, '..')
-import ultraimport
-UltraDict = ultraimport('__dir__/../UltraDict.py', 'UltraDict')
+# Make the example find UltraDict
+import sys, os
+sys.path.insert(0, os.path.join(os.path.basename(__file__), '..'))
+from UltraDict import UltraDict
 
 import multiprocessing
 
 count = 100_000
 
-shared_lock = True
-shared_lock = 'pymutex'
-
 def run(name, target, x):
     # Connect to the existing UltraDict by its name
-    d = UltraDict(name=name, shared_lock=shared_lock)
+    d = UltraDict(name=name, shared_lock=True)
     for i in range(target):
         # Adding 1 to the counter is unfortunately not an atomic operation in Python,
         # but UltraDict's shared lock comes to our resuce: We can simply reuse it.
@@ -37,7 +34,7 @@ if __name__ == '__main__':
 
     # No name provided to create a new dict with random name.
     # To make it work under Windows, we need to set a static `full_dump_size`
-    ultra = UltraDict(buffer_size=10_000, shared_lock=shared_lock, full_dump_size=10_000)
+    ultra = UltraDict(buffer_size=10_000, shared_lock=True, full_dump_size=10_000)
     ultra['counter'] = 0
 
     # Our children will use the name to attach to the existing dict
