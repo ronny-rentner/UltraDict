@@ -85,5 +85,7 @@ jobs:
           #pip install pylint
       - name: Run unit tests
         run: python -m unittest
+      - name: Run performance tests
+        run: python ./tests/performance/performance.py
           #- name: Run pylint
           #run: pylint UltraDict.py
