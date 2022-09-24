@@ -33,6 +33,7 @@ except ModuleNotFoundError:
 try:
     import ultraimport
     Exceptions = ultraimport('__dir__/Exceptions.py')
+    SharedMutex = ultraimport('__dir__/pymutex/mutex.py', 'SharedMutex', package=1)
     try:
         log = ultraimport('__dir__/utils/log.py', 'log', package=1)
         log.log_targets = [ sys.stderr ]
@@ -79,6 +80,58 @@ class UltraDict(collections.UserDict, dict):
         """ Not yet used """
         pass
 
+    class LockMixin():
+        __slots__ = 'has_lock', 'pid', 'pid_remote', 'next_acquire_parameters'
+
+        def __enter__(self):
+            self.acquire(*self.next_acquire_parameters)
+            self.reset_acquire_parameters()
+            return self
+
+        def __exit__(self, type, value, traceback):
+            self.release()
+            # Make sure exceptions are not ignored
+            return False
+
+        def __call__(self, block=True, timeout=None, sleep_time=0.000001, steal_after_timeout=False):
+            self.next_acquire_parameters = (block, timeout, sleep_time, steal_after_timeout)
+            return self
+
+        def reset_acquire_parameters(self):
+            self.next_acquire_parameters = ()
+
+
+    class SharedMutexLock(LockMixin):
+        def __init__(self, file_path):
+            self.has_lock = 0
+            self.next_acquire_parameters = ()
+
+            try:
+                from pymutex import mutex as pymutex
+            except NameError:
+                raise Exceptions.MissingDependency("Install `pymutex` Python package to use shared_lock='pymutex'") from None
+
+            self.lock = SharedMutex(file_path, lambda: True)
+
+        def acquire(self, *args, **kwargs):
+            if self.has_lock:
+                self.has_lock += 1
+                return True
+
+            self.lock.lock()
+            self.has_lock = 1
+
+        def release(self, *args, **kwargs):
+            if self.has_lock > 0:
+                self.has_lock -= 1
+                # Last local lock released, release shared lock
+                if not self.has_lock:
+                    self.lock.unlock()
+                return True
+
+            return False
+
+
     class SharedLock():
         """
         Lock stored in shared_memory to provide an additional layer of protection,
@@ -110,7 +163,8 @@ class UltraDict(collections.UserDict, dict):
                 self.pid_remote_ctx = atomics.atomicview(buffer=self.pid_remote[0:4], atype=atomics.BYTES)
             except NameError as e:
                 self.cleanup()
-                raise e
+                raise Exceptions.MissingDependency("Install `atomics` Python package to use shared_lock=True") from None
+
             self.lock_atomic = self.ctx.__enter__()
             self.pid_remote_atomic = self.pid_remote_ctx.__enter__()
 
@@ -228,9 +282,6 @@ class UltraDict(collections.UserDict, dict):
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
-        def reset_acquire_parameters(self):
-            self.next_acquire_parameters = ()
-
         def steal(self, from_pid=0, release=False):
             if self.has_lock:
                 raise Exception("Cannot steal the lock because we have already acquired it. Use release() to release the lock.")
@@ -238,7 +289,7 @@ class UltraDict(collections.UserDict, dict):
             #log.debug(f'Stealing from_pid={from_pid}, remote_pid={self.get_remote_pid()}')
 
             # It's not locked, so nothing to steal from
-            if not self.get_remote_lock():
+            if not int.from_bytes(self.lock_remote, 'little'):
                 return False
 
             # Someone else has stolen the lock
@@ -310,8 +361,8 @@ class UltraDict(collections.UserDict, dict):
         def get_remote_pid(self):
             return int.from_bytes(self.pid_remote, 'little')
 
-        def get_remote_lock(self):
-            return int.from_bytes(self.lock_remote, 'little')
+        def reset_acquire_parameters(self):
+            self.next_acquire_parameters = ()
 
         def __repr__(self):
             return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={int.from_bytes(self.lock_remote, 'little')}, has_lock={self.has_lock}, pid={self.pid}), pid_remote={int.from_bytes(self.pid_remote, 'little')}"
@@ -433,8 +484,8 @@ class UltraDict(collections.UserDict, dict):
             shared_lock_remote = self.shared_lock_remote[0:1] == b'1'
             if shared_lock is None:
                 shared_lock = shared_lock_remote
-            elif shared_lock != shared_lock_remote:
-                raise Exceptions.ParameterMismatch(f"shared_lock={shared_lock} was set but the creator has used shared_lock={shared_lock_remote}")
+            #elif shared_lock != shared_lock_remote:
+            #    raise Exceptions.ParameterMismatch(f"shared_lock={shared_lock} was set but the creator has used shared_lock={shared_lock_remote}")
 
             # Check if recurse parameter was not set to inconsistent value
             recurse_remote = self.recurse_remote[0:1] == b'1'
@@ -451,11 +502,10 @@ class UltraDict(collections.UserDict, dict):
 
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
-            try:
+            if shared_lock == 'pymutex':
+                self.lock = self.SharedMutexLock(f'/dev/shm/{self.name}_mutex')
+            else:
                 self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
-            except NameError:
-                #self.cleanup()
-                raise Exceptions.MissingDependency("Install `atomics` Python package to use shared_lock=True") from None
         else:
             self.lock = multiprocessing.RLock()
 

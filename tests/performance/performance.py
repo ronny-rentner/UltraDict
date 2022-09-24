@@ -1,7 +1,7 @@
 import sys, os, time, multiprocessing
 import ultraimport
 
-ultraimport('__dir__/lib.py', '*')
+ultraimport('__dir__/lib.py', '*', globals=locals())
 UltraDict = ultraimport('__dir__/../../UltraDict.py', 'UltraDict')
 
 count = 1_000_000
@@ -96,7 +96,12 @@ def main():
     t_end = time.perf_counter()
     print_perf('UltraDict', 'reads', t_start, t_end, count)
 
+    ##
+    ## UltraDict with shared_lock=True
+    ##
+
     ultra = UltraDict.UltraDict(shared_lock=True)
+    section = 'UltraDict (shared_lock=True)'
 
     # UltraDict with shared_lock=True (writes)
     t_start = time.perf_counter()
@@ -104,14 +109,36 @@ def main():
         with ultra.lock:
             ultra[1] = 1
     t_end = time.perf_counter()
-    print_perf('UltraDict (shared_lock=True)', 'writes', t_start, t_end, count)
+    print_perf(section, 'writes', t_start, t_end, count)
 
     # UltraDic with shared_lock=True (reads)
     t_start = time.perf_counter()
     for i in range(count):
         x = ultra[1]
     t_end = time.perf_counter()
-    print_perf('UltraDict (shared_lock=True)', 'reads', t_start, t_end, count)
+    print_perf(section, 'reads', t_start, t_end, count)
+
+    ##
+    ## UltraDict with shared_lock='pymutex'
+    ##
+
+    ultra = UltraDict.UltraDict(shared_lock='pymutex')
+    section = 'UltraDict (shared_lock=\'pymutex\')'
+
+    # UltraDict with shared_lock='pymutex' (writes)
+    t_start = time.perf_counter()
+    for i in range(count):
+        with ultra.lock:
+            ultra[1] = 1
+    t_end = time.perf_counter()
+    print_perf(section, 'writes', t_start, t_end, count)
+
+    # UltraDic with shared_lock='pymutex' (reads)
+    t_start = time.perf_counter()
+    for i in range(count):
+        x = ultra[1]
+    t_end = time.perf_counter()
+    print_perf(section, 'reads', t_start, t_end, count)
 
     print_ranking()
 
