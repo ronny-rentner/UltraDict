@@ -13,6 +13,12 @@ jobs:
   build:
     name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
     runs-on: ${{ matrix.config.os }}
+    services:
+      redis:
+        image: redis
+        ports:
+        - 6379:6379
+        options: --entrypoint redis-server
     strategy:
       fail-fast: false
       matrix:
