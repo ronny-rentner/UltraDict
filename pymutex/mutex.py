@@ -173,7 +173,10 @@ class SharedMutex:
             if e != 0:
                 raise OSError(e, os.strerror(e))
             # set robustness to PTHREAD_MUTEX_ROBUST
-            e = _pt.pthread_mutexattr_setrobust(mutex_attrs_ptr, c.c_int(1))
+            try:
+                e = _pt.pthread_mutexattr_setrobust(mutex_attrs_ptr, c.c_int(1))
+            except AttributeError:
+                pass
             if e != 0:
                 raise OSError(e, os.strerror(e))
             # set sharing mode to PTHREAD_PROCESS_SHARED
@@ -279,7 +282,10 @@ class SharedMutex:
             try:
                 self._state.logger.warning("The last thread holding the lock left it locked, recovering...")
                 if self._state.recover_shared_state_cb():
-                    e = _pt.pthread_mutex_consistent(self._state.mutex_ptr)
+                    try:
+                        e = _pt.pthread_mutex_consistent(self._state.mutex_ptr)
+                    except AttributeError:
+                        pass
                     if e != 0:
                         raise OSError(e, os.strerror(e))
                     return True
