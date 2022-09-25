@@ -29,13 +29,10 @@ import mmap
 import weakref
 import logging
 import ctypes as c
+import ctypes.util
 from . import utils
 
-
-try:
-    _pt = c.CDLL('libpthread.so.0')
-except OSError as e:
-    raise ImportError(f'Failed to link pthread library: {str(e)}')
+_pt = c.CDLL(ctypes.util.find_library('pthread'))
 
 # pthread structs' size from pthreadtypes-arch.h
 _PTHREAD_MUTEX_ATTRS_SIZE = 4
