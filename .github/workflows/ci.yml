@@ -10,15 +10,18 @@ on:
       - dev
 
 jobs:
-  build:
-    name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
-    runs-on: ${{ matrix.config.os }}
+  redis-container:
+    runs-on: ubuntu-latest
+    # Redis service is only used for performance comparion
     services:
       redis:
         image: redis
         ports:
         - 6379:6379
         options: --entrypoint redis-server
+  build:
+    name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
+    runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
       matrix:
