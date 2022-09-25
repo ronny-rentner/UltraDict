@@ -107,6 +107,13 @@ class UltraDict(collections.UserDict, dict):
             self.has_lock = 0
             self.next_acquire_parameters = ()
 
+            if not os.path.isabs(file_path):
+                if os.path.exists('/dev/shm'):
+                    file_path = os.path.join('/dev/shm', file_path)
+                else:
+                    import tempfile
+                    file_path = os.path.join(tempfile.gettempdir(), file_path)
+
             try:
                 from pymutex import mutex as pymutex
             except NameError:
@@ -506,7 +513,7 @@ class UltraDict(collections.UserDict, dict):
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
             if shared_lock == 'pymutex':
-                self.lock = self.SharedMutexLock(f'/dev/shm/{self.name}_mutex')
+                self.lock = self.SharedMutexLock(f'{self.name}_mutex')
             else:
                 self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
         else:
