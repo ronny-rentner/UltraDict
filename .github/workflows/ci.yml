@@ -10,15 +10,6 @@ on:
       - dev
 
 jobs:
-  redis-container:
-    runs-on: ubuntu-latest
-    # Redis service is only used for performance comparion
-    services:
-      redis:
-        image: redis
-        ports:
-        - 6379:6379
-        options: --entrypoint redis-server
   build:
     name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
     runs-on: ${{ matrix.config.os }}
@@ -91,6 +82,12 @@ jobs:
           pip install .[tests]
           # Manually install pylint as long as we don't build the wheels
           #pip install pylint
+      - name: Install redis
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y redis-tools redis-server
+      - name: Verify that redis is up
+        if: runner.os == 'Linux'
+        run: redis-cli ping
       - name: Run unit tests
         run: python -m unittest
       - name: Run performance tests
