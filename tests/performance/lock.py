@@ -47,12 +47,10 @@ class TestSharedLock:
         self.lock = self.ultra.lock
 
     def acquire(self):
-        #self.lock.acquire()
-        self.lock.test_and_inc()
+        self.lock.acquire(block=False)
 
     def release(self):
-        #self.lock.release()
-        self.lock.test_and_dec()
+        self.lock.release()
 
 class TestSharedMutexLock:
     name = 'SharedMutexLock'
@@ -61,7 +59,7 @@ class TestSharedMutexLock:
         self.lock = self.ultra.lock
 
     def acquire(self):
-        self.lock.acquire()
+        self.lock.acquire(block=False)
 
     def release(self):
         self.lock.release()

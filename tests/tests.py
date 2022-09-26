@@ -65,8 +65,12 @@ class UltraDictTests(unittest.TestCase):
         # Connect `other` dict to `ultra` dict via `name`
         other = UltraDict(name=ultra.name)
 
-        self.assertIsInstance(ultra.lock, ultra.SharedLock)
-        self.assertIsInstance(other.lock, other.SharedLock)
+        if sys.platform.startswith("linux"):
+            self.assertIsInstance(ultra.lock, ultra.SharedMutexLock)
+            self.assertIsInstance(other.lock, other.SharedMutexLock)
+        else:
+            self.assertIsInstance(ultra.lock, ultra.SharedLock)
+            self.assertIsInstance(other.lock, other.SharedLock)
 
         self.assertEqual(ultra.buffer_size, other.buffer_size)
 
@@ -158,13 +162,6 @@ class UltraDictTests(unittest.TestCase):
 
     def test_example_parallel(self):
         filename = "examples/parallel.py"
-        ret = self.exec(filename)
-        self.assertReturnCode(ret)
-        self.assertEqual(ret.stdout.splitlines()[-1], b'Counter:  100000  ==  100000', self.exec_show_output(ret))
-
-    @unittest.skipIf(sys.platform.startswith("win"), "not for Windows, requires libpthread")
-    def test_example_parallel_linux_faster(self):
-        filename = "examples/parallel_linux_faster.py"
         ret = self.exec(filename)
         self.assertReturnCode(ret)
         self.assertEqual(ret.stdout.splitlines()[-1], b'Counter:  100000  ==  100000', self.exec_show_output(ret))

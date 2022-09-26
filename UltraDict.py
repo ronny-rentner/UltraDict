@@ -72,6 +72,8 @@ def remove_shm_from_resource_tracker():
 #More details at: https://bugs.python.org/issue38119
 remove_shm_from_resource_tracker()
 
+running_on_linux = sys.platform.startswith("linux")
+
 class UltraDict(collections.UserDict, dict):
 
     Exceptions = Exceptions
@@ -121,13 +123,16 @@ class UltraDict(collections.UserDict, dict):
 
             self.lock = SharedMutex(file_path, lambda: True)
 
-        def acquire(self, *args, **kwargs):
+        def acquire(self, block=True, timeout=None, *args, **kwargs):
             if self.has_lock:
                 self.has_lock += 1
                 return True
 
-            self.lock.lock()
-            self.has_lock = 1
+            if self.lock.lock(block=block, timeout=timeout):
+                self.has_lock = 1
+                return True
+            else:
+                return False
 
         def release(self, *args, **kwargs):
             if self.has_lock > 0:
@@ -512,7 +517,7 @@ class UltraDict(collections.UserDict, dict):
 
         # Local lock for all processes and threads created by the same interpreter
         if shared_lock:
-            if shared_lock == 'pymutex':
+            if shared_lock == 'pymutex' or running_on_linux:
                 self.lock = self.SharedMutexLock(f'{self.name}_mutex')
             else:
                 self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
@@ -602,7 +607,14 @@ class UltraDict(collections.UserDict, dict):
         """
         Attach an existing SharedMemory object with `name`.
 
-        If `create` is True, create the object if it does not exist.
+        If `create is True`, create the object if it does not exist. Throw an
+        exception if the memory already exists.
+
+        If `create is False`, attach to an existing memoery. Throw an exception
+        if the memory does not exist.
+
+        If `create is None`, either silently attach to an existing memory or
+        create it if it does not exist.
         """
         assert size > 0 or not create
         if name:

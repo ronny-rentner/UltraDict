@@ -28,18 +28,17 @@ import stat
 import mmap
 import weakref
 import logging
-import ctypes as c
-import ctypes.util
+import ctypes, ctypes.util
 from . import utils
 
-_pt = c.CDLL(ctypes.util.find_library('pthread'))
+_pt = ctypes.CDLL(ctypes.util.find_library('pthread'))
 
 # pthread structs' size from pthreadtypes-arch.h
 _PTHREAD_MUTEX_ATTRS_SIZE = 4
 import platform as _platform
 _arch = _platform.architecture()[0]
 if _arch == '64bit':
-    if c.sizeof(c.POINTER(c.c_int)) == 8:
+    if ctypes.sizeof(ctypes.POINTER(ctypes.c_int)) == 8:
         _PTHREAD_MUTEX_SIZE = 40
     else:
         _PTHREAD_MUTEX_SIZE = 32
@@ -65,11 +64,11 @@ def configure_default_logging():
     logger.addHandler(handler)
 
 
-# posix timespec in types/struct_timespec.h
-class _timespec(c.Structure):
+# posix timespec in types/struct_timespectypes.h
+class _timespec(ctypes.Structure):
     _fields_ = [
-        ('tv_sec', c.c_long),
-        ('tv_nsec', c.c_long)
+        ('tv_sec', ctypes.c_long),
+        ('tv_nsec', ctypes.c_long)
     ]
 
 class InvalidSharedState(Exception):
@@ -91,9 +90,8 @@ class _MutexState:
     When SharedMutex is collected by the GC, _MutexState is destroyed.
     """
 
-    def __init__(
-        self, pathname: str, mutex_ptr, mutex_attrs_ptr, mutex_fd: int,
-        mutex_mmap: mmap.mmap, recover_shared_state_cb):
+    def __init__(self, pathname: str, mutex_ptr, mutex_attrs_ptr, mutex_fd: int,
+                 mutex_mmap: mmap.mmap, recover_shared_state_cb):
         self.mutex_ptr = mutex_ptr
         self.mutex_attrs_ptr = mutex_attrs_ptr
         self.locked = False
@@ -163,28 +161,28 @@ class SharedMutex:
             self._finalizer = weakref.finalize(self, _mutex_finalizer, self._state)
             return
         try:
-            mutex_attrs = c.create_string_buffer(_PTHREAD_MUTEX_ATTRS_SIZE)
-            mutex_attrs_ptr = c.byref(mutex_attrs)
+            mutex_attrs = ctypes.create_string_buffer(_PTHREAD_MUTEX_ATTRS_SIZE)
+            mutex_attrs_ptr = ctypes.byref(mutex_attrs)
             e = _pt.pthread_mutexattr_init(mutex_attrs_ptr)
             if e != 0:
                 raise OSError(e, os.strerror(e))
             # set type to PTHREAD_MUTEX_ERRORCHECK
-            e = _pt.pthread_mutexattr_settype(mutex_attrs_ptr, c.c_int(2))
+            e = _pt.pthread_mutexattr_settype(mutex_attrs_ptr, ctypes.c_int(2))
             if e != 0:
                 raise OSError(e, os.strerror(e))
             # set robustness to PTHREAD_MUTEX_ROBUST
             try:
-                e = _pt.pthread_mutexattr_setrobust(mutex_attrs_ptr, c.c_int(1))
+                e = _pt.pthread_mutexattr_setrobust(mutex_attrs_ptr, ctypes.c_int(1))
             except AttributeError:
                 pass
             if e != 0:
                 raise OSError(e, os.strerror(e))
             # set sharing mode to PTHREAD_PROCESS_SHARED
-            e = _pt.pthread_mutexattr_setpshared(mutex_attrs_ptr, c.c_int(1))
+            e = _pt.pthread_mutexattr_setpshared(mutex_attrs_ptr, ctypes.c_int(1))
             if e != 0:
                 raise OSError(e, os.strerror(e))
-            mutex = c.create_string_buffer(_PTHREAD_MUTEX_SIZE)
-            e = _pt.pthread_mutex_init(c.byref(mutex), mutex_attrs_ptr)
+            mutex = ctypes.create_string_buffer(_PTHREAD_MUTEX_SIZE)
+            e = _pt.pthread_mutex_init(ctypes.byref(mutex), mutex_attrs_ptr)
             if e != 0:
                 _pt.pthread_mutexattr_destroy(mutex_attrs_ptr)
                 raise OSError(e, os.strerror(e))
@@ -192,19 +190,19 @@ class SharedMutex:
                 assert os.write(mutex_fd, mutex) == _PTHREAD_MUTEX_SIZE, 'Failed to store the mutex'
                 # Share the mutex by creating a memory mapped file
                 mutex_mmap = mmap.mmap(mutex_fd, 0, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)
-                mutex = c.c_char.from_buffer(mutex_mmap)
+                mutex = ctypes.c_char.from_buffer(mutex_mmap)
                 # Process's user will have write and read permissions on the mutex file from now
                 # FIXME: Should it restrict all processes to be running as same user?
                 os.fchmod(mutex_fd, stat.S_IRUSR | stat.S_IWUSR)
             except:
-                _pt.pthread_mutex_destroy(c.byref(mutex))
+                _pt.pthread_mutex_destroy(ctypes.byref(mutex))
                 _pt.pthread_mutexattr_destroy(mutex_attrs_ptr)
                 raise
         except:
             os.remove(mutex_file)
             os.close(mutex_fd)
             raise
-        self._state = _MutexState(mutex_file, c.byref(mutex), mutex_attrs_ptr, mutex_fd, mutex_mmap, recover_shared_state_cb)
+        self._state = _MutexState(mutex_file, ctypes.byref(mutex), mutex_attrs_ptr, mutex_fd, mutex_mmap, recover_shared_state_cb)
         self._finalizer = weakref.finalize(self, _mutex_finalizer, self._state)
 
     @property
@@ -212,18 +210,18 @@ class SharedMutex:
         """Returns True if this mutex instance owns the lock, False otherwise."""
         return self._state.locked
 
-    def lock(self, blocking: bool = True, timeout: float = 0):
-        """Lock the mutex. If "blocking" is True, the current thread
+    def lock(self, block: bool = True, timeout: float = 0):
+        """Lock the mutex. If "block" is True, the current thread
         blocks until the mutex becomes available, if "timeout" > 0 the
         thread blocks until timeout (in seconds) expires. Returns
         True if the mutex was locked, False otherwise."""
-        if self._state.mutex_ptr is None: raise RuntimeError('Invalid state')
-        if blocking:
+        #if self._state.mutex_ptr is None: raise RuntimeError('Invalid state')
+        if block:
             # The robustness setting only works for lock attempts that
             # comes *after* the thread holding the lock terminates
             # without releasing it. The blocking call will be made of
             # several calls to pthread_mutex_timedlock.
-            if timeout > 0:
+            if timeout and timeout > 0:
                 locked = self._mutex_timedlock(timeout, False)
             else:
                 locked = self._mutex_timedlock(_MUTEX_LOCK_HEARTBEAT)
@@ -242,7 +240,7 @@ class SharedMutex:
 
     def unlock(self):
         """Unlock the mutex. Raises PermissionError if the current thread does not owns the lock."""
-        if self._state.mutex_ptr is None: raise RuntimeError('Invalid mutex state')
+        #if self._state.mutex_ptr is None: raise RuntimeError('Invalid mutex state')
         e = _pt.pthread_mutex_unlock(self._state.mutex_ptr)
         if e == 0:
             self._state.locked = False
@@ -256,7 +254,7 @@ class SharedMutex:
             current_timeout = time.clock_gettime(time.CLOCK_REALTIME) + timeout
             e = _pt.pthread_mutex_timedlock(
                 self._state.mutex_ptr,
-                c.byref(_timespec(
+                ctypes.byref(_timespec(
                     int(current_timeout),
                     int((current_timeout * 1000 % 1000) * 1_000_000)
                 ))
@@ -318,7 +316,7 @@ class SharedMutex:
         mutex_mmap = mmap.mmap(mutex_fd, 0, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)
         self._state = _MutexState(
             mutex_file,
-            c.byref(c.c_char.from_buffer(mutex_mmap)),
+            ctypes.byref(ctypes.c_char.from_buffer(mutex_mmap)),
             None,
             mutex_fd,
             mutex_mmap,

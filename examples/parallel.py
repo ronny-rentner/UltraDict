@@ -1,12 +1,16 @@
 #
-# Two processes are incrementing a counter in parallel
+# UltraDict Example
+# -----------------
+#
+# Four processes are incrementing a counter in parallel.
 #
 # In this example we use the shared_lock=True parameter.
 # This way of shared locking is safe accross independent
 # processes on all operting systems but it is slower than
 # using the built-in default locking method using `multiprocessing.RLock()`.
 #
-# UltraDict uses the atomics package internally for shared locking.
+# UltraDict uses the pthread library on Linux and the atomics package on other OS for shared locking.
+
 
 # Make the example find UltraDict
 import sys, os
