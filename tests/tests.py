@@ -179,6 +179,58 @@ class UltraDictTests(unittest.TestCase):
         self.assertEqual(ret.stdout.splitlines()[-1], b"Counter: 100 == 100", self.exec_show_output(ret))
 
 
+    def test_export_as_pure_dict(self):
+        ultra = UltraDict(
+            {
+                "1": "hello",
+                "2": 5,
+                "3": {
+                    "1": 1,
+                    "2": {
+                        "1": True,
+                        "2": None,
+                        "3": [1, 2, 3]
+                    },
+                    "3": [4, 5, 6, {"7": 8}]
+                }
+            },
+            recurse=True
+        )
+
+        ultra2 = UltraDict(
+            {
+                "1": "hello",
+                "2": 5,
+                "3": {
+                    "1": 1,
+                    "2": {
+                        "1": True,
+                        "2": None,
+                        "3": [1, 2, 3]
+                    },
+                    "3": [4, 5, 6, {"7": 8}]
+                }
+            },
+            recurse=False
+        )
+
+
+        def assert_pure_dict(elem):
+            self.assertNotIsInstance(elem, UltraDict)
+
+            if isinstance(elem, dict):
+                for key in elem.keys():
+                    assert_pure_dict(elem[key])
+
+        
+        with self.assertRaises(AssertionError):
+            assert_pure_dict(ultra)
+            assert_pure_dict(ultra2)
+
+        assert_pure_dict(ultra.as_pure_dictionary())
+        assert_pure_dict(ultra2.as_pure_dictionary())
+
+
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         for i in range(0, len(sys.argv)):

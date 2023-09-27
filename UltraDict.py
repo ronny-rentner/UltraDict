@@ -1103,6 +1103,19 @@ class UltraDict(collections.UserDict, dict):
                 raise e
         return False
 
+    @classmethod
+    def as_pure_dictionary(cls, to_convert=None):
+        if to_convert is None:
+            to_convert = cls
+        
+        if isinstance(to_convert, UltraDict):
+            res = dict(to_convert)
+            for key in res.keys():
+                res[key] = cls.as_pure_dictionary(res[key])
+
+            return res
+        
+        return to_convert
 
 
 # Saved as a reference
