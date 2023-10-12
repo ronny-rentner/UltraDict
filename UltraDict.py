@@ -505,10 +505,10 @@ class UltraDict(collections.UserDict, dict):
     def __del__(self):
         #log.debug("__del__", self.name)
         self.close()
-        if hasattr(self, 'recurse') and self.recurse:
-            #log.debug("Close recurse register")
-            self.recurse_register.close()
-            del self.recurse_register
+        #if hasattr(self, 'recurse') and self.recurse:
+        #    #log.debug("Close recurse register")
+        #    self.recurse_register.close()
+        #    del self.recurse_register
 
 
     def init_remotes(self):
