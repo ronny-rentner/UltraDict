@@ -6,11 +6,12 @@ build-backend   = "setuptools.build_meta"
 name = 'UltraDict'
 readme = "readme.md"
 license = { file = "license.txt" }
-version = "0.0.6"
+version = "0.0.7"
 dependencies= [
     'psutil',
     'atomics'
 ]
+dynamic = [ 'authors', 'description', 'requires-python' ]
 
 [[authors]]
 name = "Ronny Rentner"
