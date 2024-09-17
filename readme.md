@@ -259,7 +259,7 @@ be writing to the dict and therefore creating full dumps.
 it is not visible or accessible to new processes. All existing, still connected processes can continue to use the
 dict.
 
-`recurse`: If True, any nested dict objects will be automaticall wrapped in an `UltraDict` allowing transparent nested updates.
+`recurse`: If True, any nested dict objects will be automatically wrapped in an `UltraDict` allowing transparent nested updates.
 
 `recurse_register`: Has to be either the `name` of an UltraDict or an UltraDict instance itself. Will be used internally to keep track of dynamically created, recursive UltraDicts for proper cleanup when using `recurse=True`. Usually does not have to be set by the user.
 
