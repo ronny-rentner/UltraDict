@@ -31,7 +31,9 @@ import logging
 import ctypes, ctypes.util
 from . import utils
 
-_pt = ctypes.CDLL(ctypes.util.find_library('pthread'))
+pthread_lib = ctypes.util.find_library('pthread')
+if pthread_lib:
+    _pt = ctypes.CDLL(pthread_lib)
 
 # pthread structs' size from pthreadtypes-arch.h
 _PTHREAD_MUTEX_ATTRS_SIZE = 4
