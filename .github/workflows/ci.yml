@@ -32,13 +32,6 @@ jobs:
             arch: AMD64
 
           - name: "macos-x84_64"
-            os: macos-11
-            arch: x86_64
-          - name: "macos-universal2"
-            os: macos-11
-
-            arch: universal2
-          - name: "macos-x84_64"
             os: macos-12
             arch: x86_64
           - name: "macos-universal2"
