@@ -247,6 +247,7 @@ class UltraDict(collections.UserDict, dict):
 
                     self.pid_remote[:] = self.pid_bytes
                     #print(f'ACQ: {self.status()}')
+
                     return True
 
                 # If set to 0, we practically have a busy wait
@@ -297,6 +298,9 @@ class UltraDict(collections.UserDict, dict):
             self.pid_remote[:] = b'\x00\x00\x00\x00'
             self.has_lock = 0
 
+        def reset_acquire_parameters(self):
+            self.next_acquire_parameters = ()
+
         def steal(self, from_pid=0, release=False):
             if self.has_lock:
                 raise Exception("Cannot steal the lock because we have already acquired it. Use release() to release the lock.")
@@ -304,7 +308,7 @@ class UltraDict(collections.UserDict, dict):
             #log.debug(f'Stealing from_pid={from_pid}, remote_pid={self.get_remote_pid()}')
 
             # It's not locked, so nothing to steal from
-            if not int.from_bytes(self.lock_remote, 'little'):
+            if not self.get_remote_lock():
                 return False
 
             # Someone else has stolen the lock
@@ -378,6 +382,9 @@ class UltraDict(collections.UserDict, dict):
 
         def reset_acquire_parameters(self):
             self.next_acquire_parameters = ()
+
+        def get_remote_lock(self):
+            return int.from_bytes(self.lock_remote, 'little')
 
         def __repr__(self):
             return f"{self.__class__.__name__} @{hex(id(self))} lock_remote={int.from_bytes(self.lock_remote, 'little')}, has_lock={self.has_lock}, pid={self.pid}), pid_remote={int.from_bytes(self.pid_remote, 'little')}"
@@ -499,8 +506,8 @@ class UltraDict(collections.UserDict, dict):
             shared_lock_remote = self.shared_lock_remote[0:1] == b'1'
             if shared_lock is None:
                 shared_lock = shared_lock_remote
-            #elif shared_lock != shared_lock_remote:
-            #    raise Exceptions.ParameterMismatch(f"shared_lock={shared_lock} was set but the creator has used shared_lock={shared_lock_remote}")
+            elif shared_lock != shared_lock_remote:
+                raise Exceptions.ParameterMismatch(f"shared_lock={shared_lock} was set but the creator has used shared_lock={shared_lock_remote}")
 
             # Check if recurse parameter was not set to inconsistent value
             recurse_remote = self.recurse_remote[0:1] == b'1'
@@ -520,7 +527,11 @@ class UltraDict(collections.UserDict, dict):
             if shared_lock == 'pymutex' or running_on_linux:
                 self.lock = self.SharedMutexLock(f'{self.name}_mutex')
             else:
-                self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
+                try:
+                    self.lock = self.SharedLock(self, 'lock_remote', 'lock_pid_remote')
+                except NameError:
+                    #self.cleanup()
+                    raise Exceptions.MissingDependency("Install `atomics` Python package to use shared_lock=True") from None
         else:
             self.lock = multiprocessing.RLock()
 
@@ -572,11 +583,10 @@ class UltraDict(collections.UserDict, dict):
     def __del__(self):
         #log.debug("__del__", self.name)
         self.close()
-        if hasattr(self, 'recurse') and self.recurse:
-            #log.debug("Close recurse register")
-            self.recurse_register.close()
-            del self.recurse_register
-
+        #if hasattr(self, 'recurse') and self.recurse:
+        #    #log.debug("Close recurse register")
+        #    self.recurse_register.close()
+        #    del self.recurse_register
 
     def init_remotes(self):
         # Memoryviews to the right buffer position in self.control
@@ -591,11 +601,13 @@ class UltraDict(collections.UserDict, dict):
 
     def del_remotes(self):
         """
-        Delete all instance attributes of type memoryview from the instance for cleanup.
-        This shall ensure there are no reference left so proper cleanup can happen.
+        Delete all instance attributes whose name ends with '_remote' from
+        the instance for cleanup. This shall ensure there are no
+        reference left to shared memory views so proper cleanup can happen.
         """
-        for r in dir(self):
-            if hasattr(self, r) and type(getattr(self, r)) == memoryview:
+        remotes = [ r for r in dir(self) if r.endswith('_remote') ]
+        for r in remotes:
+            if hasattr(self, r):
                 delattr(self, r)
 
     def __reduce__(self):
@@ -1107,14 +1119,12 @@ class UltraDict(collections.UserDict, dict):
     def as_pure_dictionary(cls, to_convert=None):
         if to_convert is None:
             to_convert = cls
-        
         if isinstance(to_convert, UltraDict):
             res = dict(to_convert)
             for key in res.keys():
                 res[key] = cls.as_pure_dictionary(res[key])
 
             return res
-        
         return to_convert
 
 
