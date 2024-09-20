@@ -265,15 +265,15 @@ dict.
 
 ## Memory management
 
-`UltraDict` uses shared memory buffers and those usually live is RAM. `UltraDict` does not use any management processes to keep track of buffers.  Also it cannot know when to free those shared memory buffers again because you might want the buffers to outlive the process that has created them.
+`UltraDict` uses shared memory buffers and those buffers usually 'live' in RAM, but `UltraDict` does not use any management processes to keep track of the buffers. Furthermore, it cannot know when to free those shared memory buffers because you might want the buffers to outlive the process that has created them.
 
 By convention you should set the parameter `auto_unlink` to True for exactly one of the processes that is using the `UltraDict`. The first process
 that is creating a certain `UltraDict` will automatically get the flag `auto_unlink=True` unless you explicitly set it to `False`.
 When this process with the `auto_unlink=True` flag ends, it will try to unlink (free) all shared memory buffers.
 
-A special case is the recursive mode using `recurse=True` parameter. This mode will use an additional internal `UltraDict` to keep
-track of recursively nested `UltraDict` instances. All child `UltraDicts` will write to this register the names of the shared memory buffers
-they are creating. This allows the buffers to outlive the processes and still being correctly cleanup up by at the end of the program.
+A special case is the recursive mode using `recurse=True` parameter. This mode will use an additional internal register to keep
+track of recursively nested `UltraDict` instances. All child `UltraDicts` will write to this internal register the names of the shared memory buffers
+they are creating. This allows the buffers to outlive the processes and still being correctly cleaned up at the end of the program.
 
 **Buffer sizes and read performance:**
 
