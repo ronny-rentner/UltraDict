@@ -40,7 +40,10 @@ try:
     except ultraimport.ResolveImportError:
         import logging as log
 except ModuleNotFoundError:
-    import Exceptions
+    try:
+        from .Exceptions import *
+    except ImportError:
+        import Exceptions
     from pymutex.mutex import SharedMutex
     try:
         from utils import log
