@@ -41,10 +41,13 @@ try:
         import logging as log
 except ModuleNotFoundError:
     try:
-        from .Exceptions import *
+        from UltraDict import Exceptions
     except ImportError:
-        import Exceptions
-    from pymutex.mutex import SharedMutex
+        from . import Exceptions
+    try:
+        from UltraDict.pymutex.mutex import SharedMutex
+    except ImportError:
+        from .pymutex.mutex import SharedMutex
     try:
         from utils import log
         log.log_targets = [ sys.stderr ]
