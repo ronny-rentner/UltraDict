@@ -42,6 +42,9 @@ UltraDict = "."
 # 3.15 is still a release candidate and not in the test matrix, drop this once it is final
 skip = "cp315*"
 test-command = "python {project}/tests/tests.py"
+# The macOS runners are arm64 and the `atomics` dependency ships a broken arm64 wheel, so the wheels are
+# built but not tested there, see https://github.com/doodspav/atomics/issues/18
+test-skip = "*-macosx_*"
 
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 140
