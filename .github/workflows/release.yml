@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'  # Only trigger on version tags
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build-sdist:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - name: Build sdist
+      run: |
+        python -m pip install -U build
+        python -m build --sdist
+    - uses: actions/upload-artifact@v4
+      with:
+        name: sdist
+        path: dist/*.tar.gz
+
+  build-wheels:
+    needs: test
+    # The Cython extension makes wheels platform specific, so build one set per OS
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v4.2
+      env:
+        # GitHub has no Intel macOS runners anymore, cross-compile x86_64 on the arm64 runner
+        CIBW_ARCHS_MACOS: x86_64 arm64
+    - uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.os }}
+        path: wheelhouse/*.whl
+
+  publish:
+    needs: [build-sdist, build-wheels]
+    # Manual dispatch is a dry run, only version tags publish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+    - name: Publish
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true

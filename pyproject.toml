@@ -1,28 +1,47 @@
 [build-system]
-requires        = ["setuptools", "setuptools-scm", "wheel", "cython", "pylint", "psutil"]
+requires        = ["setuptools", "cython"]
 build-backend   = "setuptools.build_meta"
 
 [project]
 name = 'UltraDict'
+description = 'Sychronized, streaming dictionary that uses shared memory as a backend'
 readme = "readme.md"
-license = { file = "license.txt" }
+license = "Apache-2.0"
+license-files = ["license.txt"]
 version = "0.0.7"
+requires-python = ">=3.9"
 dependencies= [
     'psutil',
     'atomics'
 ]
-dynamic = [ 'authors', 'description', 'requires-python' ]
 
-[[authors]]
+[[project.authors]]
 name = "Ronny Rentner"
 email = "ultradict.code@ronny-rentner.de"
+
+[project.optional-dependencies]
+dev = ["check-manifest"]
 
 [project.urls]
 main = "https://github.com/ronny-rentner/ultradict"
 
+[tool.setuptools]
+packages = ["UltraDict", "UltraDict.pymutex"]
+zip-safe = false
+# Only with `UltraDict.UltraDict` the compiled file lands inside the package directory, next to
+# `UltraDict/UltraDict.py`, and can actually replace it on load. Named `UltraDict` it lands next
+# to the package directory, which wins on import, and the compiled file is silently never used.
+# `optional` keeps the pure Python fallback when no compiler is available.
+ext-modules = [
+    { name = "UltraDict.UltraDict", sources = ["UltraDict.py"], optional = true }
+]
+[tool.setuptools.package-dir]
+UltraDict = "."
 
-[project.optional-dependencies]
-tests = ["pytest", "ultraimport", "redis"]
+[tool.cibuildwheel]
+# 3.15 is still a release candidate and not in the test matrix, drop this once it is final
+skip = "cp315*"
+test-command = "python {project}/tests/tests.py"
 
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 140

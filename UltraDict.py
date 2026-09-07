@@ -122,11 +122,6 @@ class UltraDict(collections.UserDict, dict):
                     import tempfile
                     file_path = os.path.join(tempfile.gettempdir(), file_path)
 
-            try:
-                from pymutex import mutex as pymutex
-            except NameError:
-                raise Exceptions.MissingDependency("Install `pymutex` Python package to use shared_lock='pymutex'") from None
-
             self.lock = SharedMutex(file_path, lambda: True)
 
         def acquire(self, block=True, timeout=None, *args, **kwargs):

@@ -3,7 +3,7 @@ import subprocess
 
 # Make the tests find UltraDict
 import sys, os
-sys.path.insert(0, os.path.join(os.path.basename(__file__), '..'))
+#sys.path.insert(0, os.path.join(os.path.basename(__file__), '..'))
 from UltraDict import UltraDict
 
 # Disable logging

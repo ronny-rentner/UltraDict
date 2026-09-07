@@ -8,58 +8,18 @@ on:
     branches:
       - main
       - dev
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
   build:
-    name: Build on ${{ matrix.config.name }} with ${{ matrix.python-version }}
-    runs-on: ${{ matrix.config.os }}
+    name: Build on ${{ matrix.os }} • Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - name: "win32-x86"
-            os: windows-2019
-            arch: x86
-          - name: "win32-amd64"
-            os: windows-2019
-            arch: AMD64
-
-          - name: "win32-x86"
-            os: windows-2022
-            arch: x86
-          - name: "win32-amd64"
-            os: windows-2022
-            arch: AMD64
-
-          - name: "macos-x84_64"
-            os: macos-12
-            arch: x86_64
-          - name: "macos-universal2"
-            os: macos-12
-            arch: universal2
-
-          - name: "linux-i386"
-            os: ubuntu-20.04
-            arch: i686
-            platform: i386
-          - name: "linux-x86_64"
-            os: ubuntu-20.04
-            arch: x86_64
-            platform: x86_64
-          - name: "linux-aarch64"
-            os: ubuntu-20.04
-            arch: aarch64
-            platform: aarch64
-          - name: "linux-ppc64le"
-            os: ubuntu-20.04
-            arch: ppc64le
-            platform: ppc64le
-          - name: "linux-s390x"
-            os: ubuntu-20.04
-            arch: s390x
-            platform: s390x
-        # Run in all these versions of Python
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Python ${{ matrix.python-version }}
@@ -71,13 +31,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install optional dependencies for running the tests
-          pip install .[tests]
-          # Manually install pylint as long as we don't build the wheels
-          #pip install pylint
+          pip install .
       - name: Run unit tests
-        run: python -m unittest
-      #- name: Run performance tests
-      #run: python ./tests/performance/performance.py
-      #- name: Run pylint
-      #run: pylint UltraDict.py
+        # Run the file directly so the installed UltraDict is imported, `python -m unittest` would import the
+        # source tree from the working directory instead
+        run: python tests/tests.py
