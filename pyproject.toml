@@ -41,7 +41,10 @@ UltraDict = "."
 [tool.cibuildwheel]
 # 3.15 is still a release candidate and not in the test matrix, drop this once it is final
 skip = "cp315*"
-test-command = "python {project}/tests/tests.py"
+# The tests run from a temporary directory so the wheel is imported instead of the source tree, and they
+# start the example scripts by paths relative to the working directory, so both directories are copied there
+test-sources = ["tests", "examples"]
+test-command = "python tests/tests.py"
 # The macOS runners are arm64 and the `atomics` dependency ships a broken arm64 wheel, so the wheels are
 # built but not tested there, see https://github.com/doodspav/atomics/issues/18
 test-skip = "*-macosx_*"
