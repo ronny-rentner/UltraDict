@@ -32,8 +32,11 @@ import ctypes, ctypes.util
 from . import utils
 
 pthread_lib = ctypes.util.find_library('pthread')
-# musl has no separate libpthread, its pthread functions live in libc which the interpreter already links
-_pt = ctypes.CDLL(pthread_lib) if pthread_lib else ctypes.CDLL(None)
+if pthread_lib:
+    _pt = ctypes.CDLL(pthread_lib)
+elif os.name == 'posix':
+    # musl has no separate libpthread, its pthread functions live in libc which the interpreter already links
+    _pt = ctypes.CDLL(None)
 
 # pthread structs' size from pthreadtypes-arch.h
 _PTHREAD_MUTEX_ATTRS_SIZE = 4
