@@ -3,9 +3,6 @@ name: Release
 on:
   workflow_dispatch:
   push:
-    # TEMPORARY: dry-run the workflow from dev, workflow_dispatch only works once it is on main
-    branches:
-      - dev
     tags:
       - 'v*'  # Only trigger on version tags
 
